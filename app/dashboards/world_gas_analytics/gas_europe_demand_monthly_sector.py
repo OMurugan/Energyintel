@@ -79,6 +79,43 @@ def _set_cached_data(unit, granularity, data):
     print(f"Cached data for {cache_key}")
 
 
+# Helper functions for date slider
+def _format_date_for_display(date):
+    """Format date as 'YYYY-MM-DD' (e.g., '2019-01-01')"""
+    if pd.isna(date) or date is None:
+        return ""
+    if isinstance(date, str):
+        date = pd.to_datetime(date, errors='coerce')
+    if pd.isna(date):
+        return ""
+    return date.strftime('%Y-%m-%d')
+
+def _index_to_date(index, date_list):
+    """Convert slider index to date"""
+    if not date_list or index < 0 or index >= len(date_list):
+        return pd.Timestamp('2019-01-01')
+    return date_list[int(index)]
+
+def _date_to_index(date, date_list):
+    """Convert date to slider index"""
+    if not date_list:
+        return 0
+    if isinstance(date, str):
+        date = pd.to_datetime(date, errors='coerce')
+    if pd.isna(date):
+        return 0
+    # Find closest date index
+    try:
+        idx = date_list.index(date)
+        return idx
+    except ValueError:
+        # Find closest date
+        for i, d in enumerate(date_list):
+            if d >= date:
+                return i
+        return len(date_list) - 1
+
+
 def load_data(unit='Million Cubic Meter', granularity='month'):
     """Load the sector demand data using SQL query"""
     # Check cache first
@@ -305,10 +342,47 @@ def create_layout():
     initial_fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f0f0f0', showline=True, linecolor='#ddd')
     initial_fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f0f0f0', showline=False, zeroline=True, zerolinecolor='#ddd')
     
+    # Calculate available date range from loaded data
+    df_chart, _ = load_data()
+    all_dates = []
+    if not df_chart.empty and 'Date' in df_chart.columns:
+        all_dates = sorted(df_chart['Date'].dropna().unique())
+    
+    if all_dates:
+        min_date_val = all_dates[0]
+        max_date_val = all_dates[-1]
+        date_list = all_dates
+        
+        # Default range: Most recent 7 years
+        default_end_date = max_date_val
+        default_start_date = max_date_val - pd.DateOffset(years=7)
+        if default_start_date < min_date_val:
+            default_start_date = min_date_val
+            
+        # Find indices
+        default_start_index = _date_to_index(default_start_date, date_list)
+        default_end_index = _date_to_index(default_end_date, date_list)
+        
+        # Strings for display
+        min_date_str = _format_date_for_display(min_date_val)
+        max_date_str = _format_date_for_display(max_date_val)
+        default_start_date_str = _format_date_for_display(default_start_date)
+        default_end_date_str = _format_date_for_display(default_end_date)
+    else:
+        # Fallback
+        date_list = []
+        min_date_str = '2019-01-01'
+        max_date_str = '2025-12-31'
+        default_start_date_str = '2019-01-01'
+        default_end_date_str = '2025-12-31'
+        default_start_index = 0
+        default_end_index = 0
+
     return html.Div([
         # Store components for data
-        dcc.Store(id='min-date', data='2019-01-01'),
-        dcc.Store(id='max-date', data='2025-10-01'),
+        dcc.Store(id='min-date', data=min_date_str),
+        dcc.Store(id='max-date', data=max_date_str),
+        dcc.Store(id='europe-sector-date-list-store', data=[d.isoformat() for d in date_list]),
         
         # Download Components
         dcc.Download(id='download-sector-chart-csv'),
@@ -331,26 +405,72 @@ def create_layout():
         html.Div(id='europe-table-dummy-output', style={'display': 'none'}),
         dcc.Input(id='sector-demand-header-click-input', style={'display': 'none'}),
         
+        # Anchor for clientside callback
+        html.Div(id='europe-sector-date-picker-enhancer-anchor', style={'display': 'none'}),
+        
         # Main container
         html.Div([
             # Right sidebar with controls (positioned first for float right)
             html.Div([
                 # Date Range
                 html.Div([
-                    html.Label("Date", style={'fontWeight': 'bold', 'marginBottom': '10px', 'display': 'block', 'color': '#333', 'fontSize': '14px'}),
+                    html.Label("Date", style={'fontWeight': 'bold', 'marginBottom': '2px', 'display': 'block', 'color': '#2c3e50', 'fontSize': '14px', 'fontFamily': 'Arial'}),
                     html.Div([
-                        html.Span("1/1/2019", style={'fontSize': '12px', 'color': '#666'}),
-                        html.Span("10/1/2025", style={'fontSize': '12px', 'color': '#666', 'float': 'right'})
-                    ], style={'marginBottom': '8px'}),
-                    dcc.RangeSlider(
-                        id='date-range-slider',
-                        min=0,
-                        max=100,
-                        value=[0, 100],
-                        marks={0: '', 100: ''},
-                        tooltip={"placement": "bottom", "always_visible": False},
-                        className='custom-range-slider'
-                    )
+                        html.Div([
+                            html.Div([
+                                dcc.Input(
+                                    id='europe-sector-start-date',
+                                    type='date',
+                                    value=default_start_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ], style={'marginRight': '10px'}),
+                            html.Div([
+                                dcc.Input(
+                                    id='europe-sector-end-date',
+                                    type='date',
+                                    value=default_end_date_str,
+                                    min=min_date_str,
+                                    max=max_date_str,
+                                    placeholder='YYYY-MM-DD',
+                                    style={
+                                        'width': '65px',
+                                        'height': '28px',
+                                        'fontSize': '11px',
+                                        'fontFamily': 'Arial, sans-serif',
+                                        'border': '1px solid #ccc',
+                                        'padding': '0 2px',
+                                        'color': '#333',
+                                        'cursor': 'pointer'
+                                    }
+                                ),
+                            ]),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '10px', 'alignItems': 'center'}),
+                        html.Div([
+                            dcc.RangeSlider(
+                                id='date-range-slider',
+                                min=0,
+                                max=len(date_list) - 1 if date_list else 0,
+                                value=[default_start_index, default_end_index],
+                                step=1,
+                                marks=None,
+                                allowCross=False,
+                                className='custom-range-slider'
+                            )
+                        ], style={'width': '100%', 'margin': '0', 'padding': '0'}),
+                    ], style={'width': '100%', 'position': 'relative', 'marginBottom': '10px'}),
                 ], style={'marginBottom': '25px'}),
                 
                 # Unit Selection
@@ -606,6 +726,119 @@ def create_layout():
 def register_callbacks(dash_app, server):
     """Register callbacks for the European Monthly Demand by Sector dashboard"""
     
+    # Clientside callback to enhance date picker styling (remove default calendar icon but keep functionality)
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                /* Hide default calendar icon for date inputs */
+                input[type="date"]::-webkit-inner-spin-button,
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    display: none;
+                    -webkit-appearance: none;
+                }
+                
+                /* Ensure entire input is clickable to open picker */
+                input[type="date"] {
+                    position: relative;
+                }
+                
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    width: auto;
+                    height: auto;
+                    color: transparent;
+                    background: transparent;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Add click listener to open picker programmatically if needed
+            setTimeout(function() {
+                const startInput = document.getElementById('europe-sector-start-date');
+                const endInput = document.getElementById('europe-sector-end-date');
+                
+                if (startInput) {
+                    startInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
+                }
+                
+                if (endInput) {
+                    endInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
+                }
+            }, 1000);
+            
+            return null;
+        }
+        """,
+        Output('europe-sector-date-picker-enhancer-anchor', 'children'),
+        Input('europe-sector-date-picker-enhancer-anchor', 'id')
+    )
+
+    # Sync date controls (Inputs <-> Slider)
+    @dash_app.callback(
+        [Output('europe-sector-start-date', 'value'),
+         Output('europe-sector-end-date', 'value'),
+         Output('date-range-slider', 'value')],
+        [Input('europe-sector-start-date', 'value'),
+         Input('europe-sector-end-date', 'value'),
+         Input('date-range-slider', 'value')],
+        [State('europe-sector-date-list-store', 'data')],
+        prevent_initial_call=True
+    )
+    def sync_date_controls(start_str, end_str, slider_val, date_list):
+        ctx = callback_context
+        if not ctx.triggered or not date_list:
+            return no_update, no_update, no_update
+            
+        trigger_id = ctx.triggered[0]['prop_id']
+        
+        # Convert date list strings back to Timestamps
+        dates = [pd.to_datetime(d) for d in date_list]
+        
+        if 'date-range-slider' in trigger_id:
+            # Slider moved -> Update inputs
+            start_idx, end_idx = slider_val
+            new_start = _index_to_date(start_idx, dates)
+            new_end = _index_to_date(end_idx, dates)
+            
+            return _format_date_for_display(new_start), _format_date_for_display(new_end), no_update
+            
+        else:
+            # Input changed -> Update slider
+            if not start_str or not end_str:
+                return no_update, no_update, no_update
+                
+            start_idx = _date_to_index(start_str, dates)
+            end_idx = _date_to_index(end_str, dates)
+            
+            # Ensure start <= end
+            if start_idx > end_idx:
+                if 'start-date' in trigger_id:
+                    end_idx = start_idx
+                    end_str = start_str
+                else:
+                    start_idx = end_idx
+                    start_str = end_str
+            
+            return start_str, end_str, [start_idx, end_idx]
+
     # Chart Granularity Toggle
     @dash_app.callback(
         [Output('sector-granularity-store', 'data'),
@@ -748,7 +981,8 @@ def register_callbacks(dash_app, server):
     # UPDATE CHART (CLIENT SIDE)
     @dash_app.callback(
         Output('sector-demand-chart', 'figure'),
-        [Input('date-range-slider', 'value'),
+        [Input('europe-sector-start-date', 'value'),
+         Input('europe-sector-end-date', 'value'),
          Input('unit-selector', 'value'),
          Input('sector-country-checklist', 'value'),
          Input('highlight-country', 'value'),
@@ -758,7 +992,7 @@ def register_callbacks(dash_app, server):
          Input('sector-granularity-store', 'data'),
          Input('sector-chart-data-store', 'data')]
     )
-    def update_chart(date_range, unit, selected_countries, highlight_country, min_date_str, max_date_str, selection, granularity, chart_data):
+    def update_chart(start_date_str, end_date_str, unit, selected_countries, highlight_country, min_date_store, max_date_store, selection, granularity, chart_data):
         """Update chart based on filters and granularity"""
         if not granularity: granularity = 'month'
         
@@ -770,17 +1004,25 @@ def register_callbacks(dash_app, server):
         if 'Date' in df_to_use.columns:
             df_to_use['Date'] = pd.to_datetime(df_to_use['Date'])
         
-        # Convert date strings back to datetime
-        min_date = pd.to_datetime(min_date_str)
-        max_date = pd.to_datetime(max_date_str)
+        # Convert input strings to datetime
+        if not start_date_str or not end_date_str:
+             if min_date_store:
+                 start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                 end_date = pd.to_datetime(max_date_store).tz_localize(None)
+             else:
+                 return go.Figure()
+        else:
+            start_date = pd.to_datetime(start_date_str).tz_localize(None)
+            end_date = pd.to_datetime(end_date_str).tz_localize(None)
         
-        # Filter by date range (using Date column created in load_data)
-        date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
-        date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
+        # Ensure DataFrame dates are timezone-naive for comparison
+        if df_to_use['Date'].dt.tz is not None:
+            df_to_use['Date'] = df_to_use['Date'].dt.tz_localize(None)
         
+        # Filter by date range
         df_filtered = df_to_use[
-            (df_to_use['Date'] >= date_range_start) & 
-            (df_to_use['Date'] <= date_range_end)
+            (df_to_use['Date'] >= start_date) & 
+            (df_to_use['Date'] <= end_date)
         ].copy()
         
         # Handle country filtering (checkbox returns list)
@@ -980,11 +1222,11 @@ def register_callbacks(dash_app, server):
 
     # UPDATE TABLE (CLIENT SIDE)
     @dash_app.callback(
-        [Output('sector-demand-table', 'columns'),
-         Output('sector-demand-table', 'data'),
-         Output('sector-demand-table', 'style_data_conditional'),
-         Output('sector-demand-table', 'style_header_conditional')],
-        [Input('date-range-slider', 'value'),
+        [Output('sector-demand-table', 'data'),
+         Output('sector-demand-table', 'columns'),
+         Output('europe-table-highlight-state', 'data')],
+        [Input('europe-sector-start-date', 'value'),
+         Input('europe-sector-end-date', 'value'),
          Input('unit-selector', 'value'),
          Input('sector-country-checklist', 'value'),
          Input('highlight-country', 'value'),
@@ -994,27 +1236,36 @@ def register_callbacks(dash_app, server):
          Input('sector-table-granularity-store', 'data'),
          Input('sector-table-data-store', 'data')]
     )
-    def update_table(date_range, unit, selected_countries, highlight_country, min_date_str, max_date_str, selection, granularity, table_data):
-        """Update table based on filters and table granularity"""
+    def update_table(start_date_str, end_date_str, unit, selected_countries, highlight_country, min_date_store, max_date_store, selection, granularity, table_data):
+        """Update table based on filters and granularity"""
         if not granularity: granularity = 'month'
-
+        
         if not table_data:
-            return [], [], [], []
+            return [], [], None
             
-        df_table = pd.DataFrame(table_data)
-        if 'Date' in df_table.columns:
-            df_table['Date'] = pd.to_datetime(df_table['Date'])
-
-        # Convert date strings back to datetime
-        min_date = pd.to_datetime(min_date_str)
-        max_date = pd.to_datetime(max_date_str)
-        
-        date_range_start = min_date + (max_date - min_date) * (date_range[0] / 100)
-        date_range_end = min_date + (max_date - min_date) * (date_range[1] / 100)
-        
-        df_filtered = df_table[
-            (df_table['Date'] >= date_range_start) & 
-            (df_table['Date'] <= date_range_end)
+        df_to_use = pd.DataFrame(table_data)
+        if 'Date' in df_to_use.columns:
+            df_to_use['Date'] = pd.to_datetime(df_to_use['Date'])
+            
+        # Convert input strings to datetime
+        if not start_date_str or not end_date_str:
+             if min_date_store:
+                 start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                 end_date = pd.to_datetime(max_date_store).tz_localize(None)
+             else:
+                 return [], [], None
+        else:
+            start_date = pd.to_datetime(start_date_str).tz_localize(None)
+            end_date = pd.to_datetime(end_date_str).tz_localize(None)
+            
+        # Ensure DataFrame dates are timezone-naive for comparison
+        if df_to_use['Date'].dt.tz is not None:
+             df_to_use['Date'] = df_to_use['Date'].dt.tz_localize(None)
+            
+        # Filter by date range
+        df_filtered = df_to_use[
+            (df_to_use['Date'] >= start_date) & 
+            (df_to_use['Date'] <= end_date)
         ].copy()
         
         # Handle country filtering (checkbox returns list)
@@ -1160,13 +1411,24 @@ def register_callbacks(dash_app, server):
 
         if has_highlight:
              style_data_conditional.append({'if': {'column_id': data_col_ids}, 'color': '#ccc'})
-        
-        for query in highlight_rows_query:
-            style_data_conditional.append({'if': {'filter_query': query}, 'backgroundColor': '#cfe8ef', 'color': 'black'})
+        # Highlight Logic
+        style_data_conditional = []
+        if highlight_country:
+             style_data_conditional.append({
+                'if': {
+                    'filter_query': f'{{_Country}} = "{highlight_country}"',
+                },
+                'backgroundColor': '#fff3cd',
+                'color': 'black'
+            })
             
-        return columns, processed_data, style_data_conditional, []
-
-        return columns, processed_data, style_data_conditional, []
+        # Return data, columns, and highlight state (style data is handled by clientside or separate callback if needed, 
+        # but here we are simplifying to match the new signature or we should update signature. 
+        # Actually, looking at the signature: 
+        # [Output('sector-demand-table', 'data'), Output('sector-demand-table', 'columns'), Output('europe-table-highlight-state', 'data')]
+        # We need to return data, columns, and the highlight state.
+        
+        return processed_data, columns, highlight_country
 
     # EXPORT CHART DATA
     @dash_app.callback(

@@ -222,15 +222,64 @@ def create_layout():
     origins_df = load_data(origin_query)
     origins = origins_df['source_country'].tolist() if not origins_df.empty else []
 
-    date_range_query = """
-    SELECT MIN(tr.date) as min_date, MAX(tr.date) as max_date
+    date_list_query = """
+    SELECT DISTINCT tr.date
     FROM glng_gas_trade tr
     LEFT JOIN dim_country co ON co.dim_country_id = tr.target_country_id
-    WHERE LOWER(co.region) IN ('asia', 'oceania');
+    WHERE LOWER(co.region) IN ('asia', 'oceania')
+    ORDER BY tr.date;
     """
-    date_range_df = load_data(date_range_query)
-    min_date_val = date_range_df['min_date'].iloc[0] if not date_range_df.empty else pd.Timestamp('2019-01-01')
-    max_date_val = date_range_df['max_date'].iloc[0] if not date_range_df.empty else pd.Timestamp.now()
+    date_list_df = load_data(date_list_query)
+    date_list = pd.to_datetime(date_list_df['date']).sort_values().unique() if not date_list_df.empty else []
+    
+    # helper for formatting
+    date_list_str = [pd.Timestamp(d).strftime('%Y-%m-%d') for d in date_list]
+
+    if len(date_list) > 0:
+        min_date = date_list[0]
+        max_date = date_list[-1]
+        
+        # Default: Last 7 years or full range if shorter
+        default_end_date = max_date
+        default_start_date = max_date - pd.DateOffset(years=7)
+        if default_start_date < min_date:
+            default_start_date = min_date
+            
+        # Find indices
+        # We can use searchsorted or manual find
+        import numpy as np
+        # Ensure date_list is sorted (it should be from SQL ORDER BY but good to be safe)
+        
+        # Simple index finding
+        default_start_date_str = default_start_date.strftime('%Y-%m-%d')
+        default_end_date_str = default_end_date.strftime('%Y-%m-%d')
+        
+        # Find closest index
+        try:
+             start_idx = 0
+             end_idx = len(date_list) - 1
+             
+             for i, d in enumerate(date_list):
+                 if d >= default_start_date:
+                     start_idx = i
+                     break
+             
+             # For end date, we want the last one <= default_end (which is max_date anyway)
+             end_idx = len(date_list) - 1
+             
+        except:
+            start_idx = 0
+            end_idx = len(date_list) - 1
+            
+    else:
+        min_date = pd.Timestamp('2019-01-01')
+        max_date = pd.Timestamp.now()
+        date_list_str = []
+        start_idx = 0
+        end_idx = 0
+        default_start_date_str = '2019-01-01'
+        default_end_date_str = datetime.now().strftime('%Y-%m-%d')
+
 
     return html.Div([
         html.Div([
@@ -462,30 +511,63 @@ def create_layout():
                     ], style={'marginBottom': '15px'}),
 
                     html.Div([
-                        html.Label("Start Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
-                        dcc.Input(
-                            id='gas-asia-start-date-picker',
-                            type='text',
-                            value=min_date_val.strftime('%Y-%m-%d') if pd.notnull(min_date_val) else '2019-01-01',
-                            placeholder='YYYY-MM-DD',
-                            min='2019-01-01',
-                            max='2030-12-31',
-                            style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
-                        ),
-                    ], style={'marginBottom': '10px'}),
-
-                    html.Div([
-                        html.Label("End Date", style={'fontWeight': 'normal', 'fontSize': '12px', 'color': '#333'}),
-                        dcc.Input(
-                            id='gas-asia-end-date-picker',
-                            type='text',
-                            value=max_date_val.strftime('%Y-%m-%d') if pd.notnull(max_date_val) else datetime.now().strftime('%Y-%m-%d'),
-                            placeholder='YYYY-MM-DD',
-                            min='2019-01-01',
-                            max='2030-12-31',
-                            style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
-                        ),
-                    ], style={'marginBottom': '20px'}),
+                        html.Label("Date", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '12px', 'marginBottom': '8px', 'display': 'block'}),
+                        
+                        # Date Inputs
+                        html.Div([
+                            dcc.Input(
+                                id='gas-asia-start-date',
+                                type='date',
+                                value=default_start_date_str,
+                                min=date_list_str[0] if date_list_str else '2010-01-01',
+                                max=date_list_str[-1] if date_list_str else '2030-12-31',
+                                placeholder='YYYY-MM-DD',
+                                style={
+                                    'width': '65px',
+                                    'height': '28px',
+                                    'fontSize': '11px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'border': '1px solid #ccc',
+                                    'padding': '0 2px',
+                                    'color': '#333',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+                            dcc.Input(
+                                id='gas-asia-end-date',
+                                type='date',
+                                value=default_end_date_str,
+                                min=date_list_str[0] if date_list_str else '2010-01-01',
+                                max=date_list_str[-1] if date_list_str else '2030-12-31',
+                                placeholder='YYYY-MM-DD',
+                                style={
+                                    'width': '65px',
+                                    'height': '28px',
+                                    'fontSize': '11px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'border': '1px solid #ccc',
+                                    'padding': '0 2px',
+                                    'color': '#333',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '10px', 'alignItems': 'center'}),
+                        
+                        # Relative Container for Slider
+                        html.Div([
+                            dcc.RangeSlider(
+                                id='gas-asia-date-slider',
+                                min=0,
+                                max=len(date_list_str) - 1 if date_list_str else 0,
+                                value=[start_idx, end_idx],
+                                step=1,
+                                marks=None,
+                                allowCross=False,
+                                className='custom-range-slider'
+                            ),
+                        ], style={'position': 'relative', 'padding': '0', 'marginTop': '0px'}) 
+                        
+                    ], style={'marginBottom': '20px', 'borderBottom': '1px solid #eee', 'paddingBottom': '20px'}),
 
                     html.Div([
                         html.Label("Origin", style={'fontWeight': 'normal', 'fontSize': '13px', 'color': '#333'}),
@@ -496,6 +578,7 @@ def create_layout():
                     ], style={'marginBottom': '20px'}),
 
                     dcc.Store(id='gas-asia-selected-origins-store'),
+                    dcc.Store(id='gas-asia-date-list-store', data=date_list_str),
                     dcc.Store(id='gas-asia-chart1-agg-state', data='MONTHLY'),
                     dcc.Store(id='gas-asia-chart2-agg-state', data='MONTHLY'),
                     dcc.Store(id='gas-asia-chart3-agg-state', data='YEARLY'),
@@ -639,40 +722,152 @@ def create_layout():
                    style={'fontSize': '10px', 'color': '#666', 'fontStyle': 'italic', 'paddingLeft': '10px', 'marginTop': '10px'}),
             
             # Hidden div for clientside callback anchor
-            html.Div(id='gas-asia-table-enhancer-anchor', style={'display': 'none'})
+            html.Div(id='gas-asia-table-enhancer-anchor', style={'display': 'none'}),
+            html.Div(id='gas-asia-date-picker-enhancer-anchor', style={'display': 'none'})
         ], style={'padding': '20px', 'backgroundColor': 'white', 'width': '100%'})
         
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
 
 def register_callbacks(dash_app, server):
     
-    # Clientside callback to convert text inputs to date inputs (bypasses Dash validation)
+    
+    # Helper functions for date conversion
+    def _index_to_date(index, date_list):
+        if 0 <= index < len(date_list):
+            return date_list[index]
+        return None
+
+    def _date_to_index(date_str, date_list):
+        try:
+            dt = pd.to_datetime(date_str)
+            # Find the exact match first
+            for i, d in enumerate(date_list):
+                if d == dt:
+                    return i
+            # If not exact match, find closest
+            diffs = [abs((d - dt).days) for d in date_list]
+            return diffs.index(min(diffs))
+        except:
+            return 0 # Fallback
+
+    def _format_date_for_display(dt_obj):
+        if dt_obj:
+            return dt_obj.strftime('%Y-%m-%d')
+        return None
+
+    # Clientside callback to enhance date picker styling (remove default calendar icon but keep functionality)
     dash_app.clientside_callback(
         """
-        function() {
+        function(n_clicks) {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                /* Hide default calendar icon for date inputs */
+                input[type="date"]::-webkit-inner-spin-button,
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    display: none;
+                    -webkit-appearance: none;
+                }
+                
+                /* Ensure entire input is clickable to open picker */
+                input[type="date"] {
+                    position: relative;
+                }
+                
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    width: auto;
+                    height: auto;
+                    color: transparent;
+                    background: transparent;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Add click listener to open picker programmatically if needed
             setTimeout(function() {
-                const startInput = document.getElementById('gas-asia-start-date-picker');
-                const endInput = document.getElementById('gas-asia-end-date-picker');
+                const startInput = document.getElementById('gas-asia-start-date');
+                const endInput = document.getElementById('gas-asia-end-date');
                 
-                if (startInput && startInput.type === 'text') {
-                    startInput.type = 'date';
-                    const maxDate = new Date().toISOString().split('T')[0];
-                    startInput.max = maxDate;
+                if (startInput) {
+                    startInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
                 }
                 
-                if (endInput && endInput.type === 'text') {
-                    endInput.type = 'date';
-                    const maxDate = new Date().toISOString().split('T')[0];
-                    endInput.max = maxDate;
+                if (endInput) {
+                    endInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
                 }
-            }, 100);
+            }, 1000);
+            
             return null;
         }
         """,
-        Output('gas-asia-chart1-selection-store', 'data', allow_duplicate=True),
-        Input('gas-asia-start-date-picker', 'id'),
-        prevent_initial_call='initial_duplicate'
+        Output('gas-asia-date-picker-enhancer-anchor', 'children'),
+        Input('gas-asia-date-picker-enhancer-anchor', 'id')
     )
+
+    # Sync date controls (Inputs <-> Slider)
+    @dash_app.callback(
+        [Output('gas-asia-start-date', 'value'),
+         Output('gas-asia-end-date', 'value'),
+         Output('gas-asia-date-slider', 'value')],
+        [Input('gas-asia-start-date', 'value'),
+         Input('gas-asia-end-date', 'value'),
+         Input('gas-asia-date-slider', 'value')],
+        [State('gas-asia-date-list-store', 'data')],
+        prevent_initial_call=True
+    )
+    def sync_date_controls(start_str, end_str, slider_val, date_list):
+        from dash import callback_context
+        
+        if not callback_context.triggered or not date_list:
+            return no_update, no_update, no_update
+            
+        trigger_id = callback_context.triggered[0]['prop_id']
+        
+        # Convert date list strings back to Timestamps
+        dates = [pd.to_datetime(d) for d in date_list]
+        
+        if 'gas-asia-date-slider' in trigger_id:
+            # Slider moved -> Update inputs
+            start_idx, end_idx = slider_val
+            new_start = _index_to_date(start_idx, dates)
+            new_end = _index_to_date(end_idx, dates)
+            
+            return _format_date_for_display(new_start), _format_date_for_display(new_end), no_update
+            
+        else:
+            # Input changed -> Update slider
+            if not start_str or not end_str:
+                return no_update, no_update, no_update
+                
+            start_idx = _date_to_index(start_str, dates)
+            end_idx = _date_to_index(end_str, dates)
+            
+            # Ensure start <= end
+            if start_idx > end_idx:
+                if 'start-date' in trigger_id:
+                    end_idx = start_idx
+                    end_str = start_str
+                else:
+                    start_idx = end_idx
+                    start_str = end_str
+            
+            return start_str, end_str, [start_idx, end_idx]
 
     # Clientside callback for table highlighting
     dash_app.clientside_callback(
@@ -1285,8 +1480,8 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('gas-asia-chart-1', 'figure'),
         [Input('gas-asia-destination-dropdown', 'value'),
-         Input('gas-asia-start-date-picker', 'value'),
-         Input('gas-asia-end-date-picker', 'value'),
+         Input('gas-asia-start-date', 'value'),
+         Input('gas-asia-end-date', 'value'),
          Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-unit-filter', 'value'),
          Input('gas-asia-chart1-agg-state', 'data'),
@@ -1483,8 +1678,8 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('gas-asia-chart-2', 'figure'),
         [Input('gas-asia-destination-dropdown', 'value'),
-         Input('gas-asia-start-date-picker', 'value'),
-         Input('gas-asia-end-date-picker', 'value'),
+         Input('gas-asia-start-date', 'value'),
+         Input('gas-asia-end-date', 'value'),
          Input('gas-asia-selected-origins-store', 'data'),
          Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-unit-filter', 'value'),
@@ -1682,8 +1877,8 @@ def register_callbacks(dash_app, server):
     @dash_app.callback(
         Output('gas-asia-chart-3', 'figure'),
         [Input('gas-asia-destination-dropdown', 'value'),
-         Input('gas-asia-start-date-picker', 'value'),
-         Input('gas-asia-end-date-picker', 'value'),
+         Input('gas-asia-start-date', 'value'),
+         Input('gas-asia-end-date', 'value'),
          Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-unit-filter', 'value'),
          Input('gas-asia-chart3-agg-state', 'data'),
@@ -1988,8 +2183,8 @@ def register_callbacks(dash_app, server):
         [Output('gas-asia-imports-mix-table', 'data'),
          Output('gas-asia-imports-mix-table', 'columns')],
         [Input('gas-asia-destination-dropdown', 'value'),
-         Input('gas-asia-start-date-picker', 'value'),
-         Input('gas-asia-end-date-picker', 'value'),
+         Input('gas-asia-start-date', 'value'),
+         Input('gas-asia-end-date', 'value'),
          Input('gas-asia-selected-origins-store', 'data'),
          Input('gas-asia-flow-type-filter', 'value'),
          Input('gas-asia-table-agg-state', 'data')]
@@ -2170,8 +2365,8 @@ def register_callbacks(dash_app, server):
         Output("gas-asia-download-chart1-csv", "data"),
         Input("gas-asia-export-chart1-btn", "n_clicks"),
         [State('gas-asia-destination-dropdown', 'value'),
-         State('gas-asia-start-date-picker', 'value'),
-         State('gas-asia-end-date-picker', 'value'),
+         State('gas-asia-start-date', 'value'),
+         State('gas-asia-end-date', 'value'),
          State('gas-asia-flow-type-filter', 'value'),
          State('gas-asia-unit-filter', 'value'),
          State('gas-asia-chart1-agg-state', 'data')],
@@ -2230,8 +2425,8 @@ def register_callbacks(dash_app, server):
         Output("gas-asia-download-chart2-csv", "data"),
         Input("gas-asia-export-chart2-btn", "n_clicks"),
         [State('gas-asia-destination-dropdown', 'value'),
-         State('gas-asia-start-date-picker', 'value'),
-         State('gas-asia-end-date-picker', 'value'),
+         State('gas-asia-start-date', 'value'),
+         State('gas-asia-end-date', 'value'),
          State('gas-asia-selected-origins-store', 'data'),
          State('gas-asia-flow-type-filter', 'value'),
          State('gas-asia-unit-filter', 'value'),
@@ -2281,8 +2476,8 @@ def register_callbacks(dash_app, server):
         Output("gas-asia-download-chart3-csv", "data"),
         Input("gas-asia-export-chart3-btn", "n_clicks"),
         [State('gas-asia-destination-dropdown', 'value'),
-         State('gas-asia-start-date-picker', 'value'),
-         State('gas-asia-end-date-picker', 'value'),
+         State('gas-asia-start-date', 'value'),
+         State('gas-asia-end-date', 'value'),
          State('gas-asia-flow-type-filter', 'value'),
          State('gas-asia-unit-filter', 'value'),
          State('gas-asia-chart3-agg-state', 'data')],
@@ -2340,8 +2535,8 @@ def register_callbacks(dash_app, server):
         Output("gas-asia-download-table-csv", "data"),
         Input("gas-asia-export-table-btn", "n_clicks"),
         [State('gas-asia-destination-dropdown', 'value'),
-         State('gas-asia-start-date-picker', 'value'),
-         State('gas-asia-end-date-picker', 'value'),
+         State('gas-asia-start-date', 'value'),
+         State('gas-asia-end-date', 'value'),
          State('gas-asia-selected-origins-store', 'data'),
          State('gas-asia-flow-type-filter', 'value'),
          State('gas-asia-table-agg-state', 'data')],

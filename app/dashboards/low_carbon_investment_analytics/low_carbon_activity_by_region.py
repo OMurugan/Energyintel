@@ -279,9 +279,9 @@ def create_layout():
                     html.Label(
                         "Announcement Date",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': EI_DARK_BLUE,
-                            'fontSize': '16px',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block',
                             'fontFamily': 'Arial, sans-serif'
@@ -303,13 +303,12 @@ def create_layout():
                                         'fontSize': '11px',
                                         'fontFamily': 'Arial, sans-serif',
                                         'border': '1px solid #ccc',
-                                        'borderRadius': '4px',
                                         'padding': '0 2px',
                                         'color': '#333',
                                         'cursor': 'pointer'
                                     }
                                 ),
-                            ], style={'marginRight': '65px'}),
+                            ]),
                             html.Div([
                                 dcc.Input(
                                     id='low-carbon-end-date',
@@ -324,14 +323,13 @@ def create_layout():
                                         'fontSize': '11px',
                                         'fontFamily': 'Arial, sans-serif',
                                         'border': '1px solid #ccc',
-                                        'borderRadius': '4px',
                                         'padding': '0 2px',
                                         'color': '#333',
                                         'cursor': 'pointer'
                                     }
                                 ),
                             ]),
-                        ], style={'width': 'auto', 'display': 'flex', 'gap': '0px', 'marginBottom': '10px', 'alignItems': 'center'}),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '10px', 'alignItems': 'center'}),
                     ], style={'marginBottom': '5px', 'fontFamily': 'Arial, sans-serif', 'overflow': 'hidden'}),
                     dcc.RangeSlider(
                         id='low-carbon-date-filter',
@@ -349,7 +347,7 @@ def create_layout():
                     html.Label(
                         "Measure",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': '#333',
                             'fontSize': '14px',
                             'marginBottom': '10px',
@@ -373,7 +371,7 @@ def create_layout():
                     html.Label(
                         "Breakdown",
                         style={
-                            'fontWeight': 'bold',
+                            # 'fontWeight': 'bold',
                             'color': '#333',
                             'fontSize': '14px',
                             'marginBottom': '10px',
@@ -399,9 +397,9 @@ def create_layout():
                     html.Label(
                         "Legend",
                         style={
-                            'fontWeight': 'bold',
-                            'color': '#777',
-                            'fontSize': '12px',
+                            # 'fontWeight': 'bold',
+                            'color': '#333',
+                            'fontSize': '14px',
                             'marginBottom': '10px',
                             'display': 'block'
                         }
@@ -442,7 +440,7 @@ def create_layout():
                     target="_blank",
                     style={
                         'fontSize': '11px',
-                        'color': '#fe5000',
+                        'color': '#4996B2',
                         'fontFamily': 'Arial, sans-serif',
                         'textDecoration': 'underline',
                         'cursor': 'pointer'
@@ -702,6 +700,17 @@ def register_callbacks(dash_app, server):
                 # trigger_id format: '{"index":"Divested","type":"low-carbon-legend-item"}.n_clicks'
                 prop_json = trigger_id.split('.n_clicks')[0]
                 clicked_index = json.loads(prop_json)['index']
+                
+                # Check if this was a real click (n_clicks > 0)
+                # legend_clicks is a list of click counts for all legend items
+                # We need to find the click count for the items that triggered this
+                trigger_data = json.loads(prop_json)
+                
+                # Verify that it's a real click by checking the specific triggered input value
+                triggered_val = ctx.triggered[0]['value']
+                if not triggered_val or triggered_val == 0:
+                    return no_update, no_update
+
                 new_sel = {'type': 'legend', 'breakdown': clicked_index}
             except:
                 return no_update, no_update

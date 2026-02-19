@@ -202,7 +202,7 @@ def create_layout():
     default_start_date_str = default_start_date.strftime('%Y-%m-%d')
     default_end_date_str = default_end_date.strftime('%Y-%m-%d')
 
-    return html.Div([
+    return html.Div(id='lng-dashboard-container', children=[
         # Store components for tracking previous filter values and granularity
         dcc.Store(id='country-filter-previous', data={'all_selected': True}),  # Initialize with all selected
         dcc.Store(id='terminal-filter-previous', data={'all_selected': True}),  # Initialize with all selected
@@ -511,69 +511,92 @@ def register_callbacks(dash_app, server):
         prevent_initial_call='initial_duplicate'
     )
 
-    # Callback to toggle Country dropdown visibility
-    @dash_app.callback(
-        Output('lng-country-dropdown-open', 'data'),
-        Input('lng-country-trigger', 'n_clicks'),
-        State('lng-country-dropdown-open', 'data'),
-        prevent_initial_call=True
-    )
-    def toggle_country_dropdown(n_clicks, is_open):
-        return not is_open if n_clicks else is_open
-
-    # Callback to update Country container display based on dropdown state
-    @dash_app.callback(
-        Output('lng-country-container', 'style'),
-        Input('lng-country-dropdown-open', 'data'),
-    )
-    def update_country_container_display(is_open):
-        base_style = {
-            'padding': '5px 10px', 
-            'marginTop': '5px',
-            'border': '1px solid #ccc',
-            'borderRadius': '3px',
-            'maxHeight': '200px',
-            'overflowY': 'auto',
-            'backgroundColor': '#fff',
-            'position': 'absolute',
-            'zIndex': '1000',
-            'width': '150px'
+    # Clientside callback to handle dropdown toggling and click-outside logic
+    dash_app.clientside_callback(
+        """
+        function(n_country, n_terminal, n_container, style_country, style_terminal) {
+            var ctx = dash_clientside.callback_context;
+            if (!ctx.triggered || ctx.triggered.length === 0) {
+                return [style_country, style_terminal];
+            }
+            
+            var triggered_id = ctx.triggered[0].prop_id.split('.')[0];
+            
+            // Base style for open state (Container)
+            var base_style = {
+                'padding': '5px 10px', 
+                'marginTop': '-5px',
+                'border': '1px solid #ccc',
+                'borderRadius': '3px',
+                'maxHeight': '200px',
+                'overflowY': 'auto',
+                'backgroundColor': '#fff',
+                'position': 'absolute',
+                'zIndex': '1000',
+                'width': '100%',
+                'borderTop': '0px',
+                'display': 'block'
+            };
+            
+            var closed_style = Object.assign({}, base_style, {'display': 'none'});
+            
+            // Handle null/undefined styles
+            style_country = style_country || closed_style;
+            style_terminal = style_terminal || closed_style;
+            
+            // If container was clicked (checking for outside clicks)
+            if (triggered_id === 'lng-dashboard-container') {
+                var is_trigger_click = false;
+                ctx.triggered.forEach(function(t) {
+                    if (t.prop_id.indexOf('trigger') !== -1) {
+                        is_trigger_click = true;
+                    }
+                });
+                
+                if (is_trigger_click) {
+                    // Let trigger logic handle it
+                } else {
+                    // Check if click was inside one of our structures
+                    var e = window.event;
+                    if (e) {
+                         var target = e.target;
+                         var closest = target.closest('#lng-country-trigger, #lng-country-container, #lng-terminal-trigger, #lng-terminal-container');
+                         if (closest) {
+                             return [style_country, style_terminal];
+                         } else {
+                            // Clicked outside. Close all.
+                            return [closed_style, closed_style];
+                         }
+                    }
+                }
+            }
+            
+            // Toggle Logic
+            var new_country = (style_country && style_country.display === 'block') ? style_country : closed_style;
+            var new_terminal = (style_terminal && style_terminal.display === 'block') ? style_terminal : closed_style;
+            
+            var clicked_country = ctx.triggered.some(t => t.prop_id.startsWith('lng-country-trigger'));
+            var clicked_terminal = ctx.triggered.some(t => t.prop_id.startsWith('lng-terminal-trigger'));
+            
+            if (clicked_country) {
+                new_country = (style_country && style_country.display === 'block') ? closed_style : base_style;
+            } else if (clicked_terminal) {
+                new_terminal = (style_terminal && style_terminal.display === 'block') ? closed_style : base_style;
+            } else if (triggered_id === 'lng-dashboard-container') {
+                 return [closed_style, closed_style];
+            }
+            
+            return [new_country, new_terminal];
         }
-        base_style['display'] = 'block' if is_open else 'none'
-        return base_style
-
-    # Callback to toggle Terminal dropdown visibility
-    @dash_app.callback(
-        Output('lng-terminal-dropdown-open', 'data'),
-        Input('lng-terminal-trigger', 'n_clicks'),
-        State('lng-terminal-dropdown-open', 'data'),
-        prevent_initial_call=True
+        """,
+        [Output('lng-country-container', 'style'),
+         Output('lng-terminal-container', 'style')],
+        [Input('lng-country-trigger', 'n_clicks'),
+         Input('lng-terminal-trigger', 'n_clicks'),
+         Input('lng-dashboard-container', 'n_clicks')],
+        [State('lng-country-container', 'style'),
+         State('lng-terminal-container', 'style')]
     )
-    def toggle_terminal_dropdown(n_clicks, is_open):
-        return not is_open if n_clicks else is_open
-
-    # Callback to update Terminal container display based on dropdown state
-    @dash_app.callback(
-        Output('lng-terminal-container', 'style'),
-        Input('lng-terminal-dropdown-open', 'data'),
-    )
-    def update_terminal_container_display(is_open):
-        base_style = {
-            'padding': '5px 10px', 
-            'marginTop': '5px',
-            'border': '1px solid #ccc',
-            'borderRadius': '3px',
-            'maxHeight': '200px',
-            'overflowY': 'auto',
-            'backgroundColor': '#fff',
-            'position': 'absolute',
-            'zIndex': '1000',
-            'width': '150px'
-        }
-        base_style['display'] = 'block' if is_open else 'none'
-        return base_style
-
-    # Callback to update Country label based on selection
     @dash_app.callback(
         Output('lng-country-label', 'children'),
         Input('country-checklist', 'value')
