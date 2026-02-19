@@ -303,7 +303,6 @@ def create_layout():
                                         'fontSize': '11px',
                                         'fontFamily': 'Arial, sans-serif',
                                         'border': '1px solid #ccc',
-                                        'borderRadius': '4px',
                                         'padding': '0 2px',
                                         'color': '#333',
                                         'cursor': 'pointer'
@@ -324,7 +323,6 @@ def create_layout():
                                         'fontSize': '11px',
                                         'fontFamily': 'Arial, sans-serif',
                                         'border': '1px solid #ccc',
-                                        'borderRadius': '4px',
                                         'padding': '0 2px',
                                         'color': '#333',
                                         'cursor': 'pointer'
