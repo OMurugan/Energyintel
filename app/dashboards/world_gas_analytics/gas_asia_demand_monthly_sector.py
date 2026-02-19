@@ -128,6 +128,42 @@ ORDER BY
 """
 
 
+# Helper functions for date slider
+def _format_date_for_display(date):
+    """Format date as 'YYYY-MM-DD' (e.g., '2019-01-01')"""
+    if pd.isna(date) or date is None:
+        return ""
+    if isinstance(date, str):
+        date = pd.to_datetime(date, errors='coerce')
+    if pd.isna(date):
+        return ""
+    return date.strftime('%Y-%m-%d')
+
+def _index_to_date(index, date_list):
+    """Convert slider index to date"""
+    if not date_list or index < 0 or index >= len(date_list):
+        return pd.Timestamp('2019-01-01')
+    return date_list[int(index)]
+
+def _date_to_index(date, date_list):
+    """Convert date to slider index"""
+    if not date_list:
+        return 0
+    if isinstance(date, str):
+        date = pd.to_datetime(date, errors='coerce')
+    if pd.isna(date):
+        return 0
+    # Find closest date index
+    try:
+        idx = date_list.index(date)
+        return idx
+    except ValueError:
+        # Find closest date
+        for i, d in enumerate(date_list):
+            if d >= date:
+                return i
+        return len(date_list) - 1
+
 # --- Data Loading ---
 
 def get_db_options():
@@ -300,33 +336,54 @@ def create_layout():
     # Load initial Chart data (All countries) to setup Date slider
     df_chart = load_chart_data(country_filter='(All)')
     
-    if df_chart.empty:
-        # Fallback if DB empty
-        unique_dates = []
-        max_idx = 0
-        date_marks = {}
-        date_map_data = []
-    else:
+    unique_dates = []
+    if not df_chart.empty:
         unique_dates = sorted(df_chart['Date_Obj'].unique())
-        max_idx = len(unique_dates) - 1 if unique_dates else 0
-        date_map_data = [d.strftime('%-m/%-d/%Y') for d in unique_dates]
         
-        # Only show Start and End Date labels
-        date_marks = {
-            0: {'label': '', 'style': {'display': 'none'}}, 
-            max_idx: {'label': '', 'style': {'display': 'none'}}
-        }
-
-    # Initial Start/End indices
-    start_idx = 0
-    end_idx = max_idx
-
-    start_date_label = date_map_data[0] if date_map_data else ""
-    end_date_label = date_map_data[-1] if date_map_data else ""
+    if unique_dates:
+        min_date_val = unique_dates[0]
+        max_date_val = unique_dates[-1]
+        date_list = unique_dates
+        
+        # Default range: Most recent 8 years
+        default_end_date = max_date_val
+        default_start_date = max_date_val - pd.DateOffset(years=8)
+        if default_start_date < min_date_val:
+            default_start_date = min_date_val
+            
+        # Find indices
+        default_start_index = _date_to_index(default_start_date, date_list)
+        default_end_index = _date_to_index(default_end_date, date_list)
+        
+        # Strings for display
+        min_date_str = _format_date_for_display(min_date_val)
+        max_date_str = _format_date_for_display(max_date_val)
+        default_start_date_str = _format_date_for_display(default_start_date)
+        default_end_date_str = _format_date_for_display(default_end_date)
+        
+        date_list_store = [d.isoformat() for d in date_list]
+    else:
+        # Fallback
+        date_list = []
+        date_list_store = []
+        min_date_str = '2019-01-01'
+        max_date_str = '2025-12-31'
+        default_start_date_str = '2019-01-01'
+        default_end_date_str = '2025-12-31'
+        default_start_index = 0
+        default_end_index = 0
 
     return html.Div([
+        # Store for dates
+        dcc.Store(id='asia-sector-date-list-store', data=date_list_store),
+        dcc.Store(id='min-date', data=min_date_str),
+        dcc.Store(id='max-date', data=max_date_str),
+        
         dcc.Download(id="download-asia-chart-csv"),
         dcc.Download(id="download-asia-table-csv"),
+        
+        # Anchor for clientside callback
+        html.Div(id='asia-sector-date-picker-enhancer-anchor', style={'display': 'none'}),
         # Header Row
         html.Div([
             html.H1("All Gas Demand", style={
@@ -519,40 +576,65 @@ def create_layout():
                     html.Div([
                         html.Label("Date", style={'fontWeight': 'bold', 'color': '#555', 'fontSize': '12px', 'marginBottom': '8px', 'display': 'block'}),
                         
-                        # Relative Container for Slider + Moving Labels
+                        # Date Inputs
                         html.Div([
-                            # Moving Labels (Static Placement, Dynamic Text)
-                            html.Div(id='asia-date-label-start', children=start_date_label, style={
-                                'position': 'absolute', 'top': '-30px', 'left': '0', 
-                                'fontSize': '11px', 'color': '#777', 
-                                'whiteSpace': 'nowrap',
-                                'pointerEvents': 'none',
-                                'zIndex': '10'
-                            }),
-                            html.Div(id='asia-date-label-end', children=end_date_label, style={
-                                'position': 'absolute', 'top': '-30px', 'right': '0', 
-                                'fontSize': '11px', 'color': '#777', 
-                                'whiteSpace': 'nowrap',
-                                'pointerEvents': 'none',
-                                'zIndex': '10'
-                            }),
+                            dcc.Input(
+                                id='asia-sector-start-date',
+                                type='date',
+                                value=default_start_date_str,
+                                min=min_date_str,
+                                max=max_date_str,
+                                placeholder='YYYY-MM-DD',
+                                style={
+                                    'width': '65px',
+                                    'height': '28px',
+                                    'fontSize': '11px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'border': '1px solid #ccc',
+                                    'borderRadius': '4px',
+                                    'padding': '0 2px',
+                                    'color': '#333',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+                            dcc.Input(
+                                id='asia-sector-end-date',
+                                type='date',
+                                value=default_end_date_str,
+                                min=min_date_str,
+                                max=max_date_str,
+                                placeholder='YYYY-MM-DD',
+                                style={
+                                    'width': '65px',
+                                    'height': '28px',
+                                    'fontSize': '11px',
+                                    'fontFamily': 'Arial, sans-serif',
+                                    'border': '1px solid #ccc',
+                                    'borderRadius': '4px',
+                                    'padding': '0 2px',
+                                    'color': '#333',
+                                    'cursor': 'pointer'
+                                }
+                            ),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '10px', 'alignItems': 'center'}),
 
+                        # Relative Container for Slider
+                        html.Div([
                             dcc.RangeSlider(
                                 id='asia-date-slider',
                                 min=0,
-                                max=max_idx,
-                                value=[start_idx, end_idx],
-                                marks=date_marks,
+                                max=len(date_list) - 1 if date_list else 0,
+                                value=[default_start_index, default_end_index],
                                 step=1,
-                                updatemode='drag'
+                                marks=None,
+                                allowCross=False,
+                                className='custom-range-slider'
                             ),
-                        ], style={'position': 'relative', 'padding': '0 10px', 'marginTop': '30px', 'height': '20px'}) 
+                        ], style={'position': 'relative', 'padding': '0', 'marginTop': '0px'}) 
                         
                     ], style={'marginBottom': '20px', 'borderBottom': '1px solid #eee', 'paddingBottom': '20px'}),
                     
-                    # Store unique dates as JSON and MAX Index for callback math
-                    dcc.Store(id='asia-date-map', data=date_map_data),
-                    dcc.Store(id='asia-date-max', data=max_idx),
+
 
                     # Unit Filter
                     html.Div([
@@ -1675,9 +1757,7 @@ def register_callbacks(dash_app, server):
     # 0. Data Fetching Callback
     @dash_app.callback(
         [Output('store-asia-chart-data', 'data'),
-         Output('store-asia-table-data', 'data'),
-         Output('loading-trigger-chart', 'children'),
-         Output('loading-trigger-table', 'children')],
+         Output('store-asia-table-data', 'data')],
         Input('asia-country-filter', 'value')
     )
     def fetch_asia_data(country):
@@ -1687,223 +1767,279 @@ def register_callbacks(dash_app, server):
         
         # We return records. Date objects will be strings.
         # df_chart has Date_Obj column.
-        return df_chart.to_dict('records'), df_table.to_dict('records'), "", ""
+        return df_chart.to_dict('records'), df_table.to_dict('records')
 
-    # 1. Main Update Callback
-    
+    # Clientside callback to enhance date picker styling (remove default calendar icon but keep functionality)
+    dash_app.clientside_callback(
+        """
+        function(n_clicks) {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                /* Hide default calendar icon for date inputs */
+                input[type="date"]::-webkit-inner-spin-button,
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    display: none;
+                    -webkit-appearance: none;
+                }
+                
+                /* Ensure entire input is clickable to open picker */
+                input[type="date"] {
+                    position: relative;
+                }
+                
+                input[type="date"]::-webkit-calendar-picker-indicator {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    width: auto;
+                    height: auto;
+                    color: transparent;
+                    background: transparent;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Add click listener to open picker programmatically if needed
+            setTimeout(function() {
+                const startInput = document.getElementById('asia-sector-start-date');
+                const endInput = document.getElementById('asia-sector-end-date');
+                
+                if (startInput) {
+                    startInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
+                }
+                
+                if (endInput) {
+                    endInput.addEventListener('click', function(e) {
+                        try {
+                            this.showPicker();
+                        } catch (error) {
+                            console.log('showPicker not supported');
+                        }
+                    });
+                }
+            }, 1000);
+            
+            return null;
+        }
+        """,
+        Output('asia-sector-date-picker-enhancer-anchor', 'children'),
+        Input('asia-sector-date-picker-enhancer-anchor', 'id')
+    )
+
+    # Helper functions for date conversion
+    def _index_to_date(index, date_list):
+        if 0 <= index < len(date_list):
+            return date_list[index]
+        return None
+
+    def _date_to_index(date_str, date_list):
+        try:
+            dt = pd.to_datetime(date_str)
+            # Find the exact match first
+            for i, d in enumerate(date_list):
+                if d == dt:
+                    return i
+            # If not exact match, find closest
+            diffs = [abs((d - dt).days) for d in date_list]
+            return diffs.index(min(diffs))
+        except:
+            return 0 # Fallback
+
+    def _format_date_for_display(dt_obj):
+        if dt_obj:
+            return dt_obj.strftime('%Y-%m-%d')
+        return None
+
+    # Sync date controls (Inputs <-> Slider)
+    @dash_app.callback(
+        [Output('asia-sector-start-date', 'value'),
+         Output('asia-sector-end-date', 'value'),
+         Output('asia-date-slider', 'value')],
+        [Input('asia-sector-start-date', 'value'),
+         Input('asia-sector-end-date', 'value'),
+         Input('asia-date-slider', 'value')],
+        [State('asia-sector-date-list-store', 'data')], # This should be the list of all possible dates for the slider
+        prevent_initial_call=True
+    )
+    def sync_date_controls(start_str, end_str, slider_val, date_list):
+        from dash import callback_context
+        
+        if not callback_context.triggered or not date_list:
+            return no_update, no_update, no_update
+            
+        trigger_id = callback_context.triggered[0]['prop_id']
+        
+        # Convert date list strings back to Timestamps
+        dates = [pd.to_datetime(d) for d in date_list]
+        
+        if 'asia-date-slider' in trigger_id:
+            # Slider moved -> Update inputs
+            start_idx, end_idx = slider_val
+            new_start = _index_to_date(start_idx, dates)
+            new_end = _index_to_date(end_idx, dates)
+            
+            return _format_date_for_display(new_start), _format_date_for_display(new_end), no_update
+            
+        else:
+            # Input changed -> Update slider
+            if not start_str or not end_str:
+                return no_update, no_update, no_update
+                
+            start_idx = _date_to_index(start_str, dates)
+            end_idx = _date_to_index(end_str, dates)
+            
+            # Ensure start <= end
+            if start_idx > end_idx:
+                if 'start-date' in trigger_id:
+                    end_idx = start_idx
+                    end_str = start_str
+                else:
+                    start_idx = end_idx
+                    start_str = end_str
+            
+            return start_str, end_str, [start_idx, end_idx]
+
     @dash_app.callback(
         [Output('asia-gas-monthly-chart', 'figure'),
-         Output('chart-highlight-state', 'data'),
-         Output('asia-gas-monthly-chart', 'clickData')],
-        [Input('asia-unit-filter', 'value'),
+         Output('loading-trigger-chart', 'children'),
+         Output('chart-highlight-state', 'data')], # Update highlight state
+        [Input('store-asia-chart-data', 'data'),
+         Input('asia-sector-start-date', 'value'),
+         Input('asia-sector-end-date', 'value'),
+         Input('asia-unit-filter', 'value'),
          Input('asia-sector-filter', 'value'),
-         Input('store-asia-chart-data', 'data'),
-         Input('asia-date-slider', 'value'),
+         Input('chart-time-level', 'data'),
          Input('asia-gas-monthly-chart', 'clickData'),
-         Input('axis-click-trigger', 'value'),
-         Input('chart-time-level', 'data')],
-        [State('asia-date-map', 'data'),
-         State('chart-highlight-state', 'data')]
+         Input('asia-table-highlight-state', 'data'), # Listen to table click
+         Input('axis-click-trigger', 'value')], # Listen to axis click
+         [State('min-date', 'data'),
+         State('max-date', 'data')]
     )
-    def update_chart(unit, sector, chart_data, date_range_idx, clickData, axis_click_raw, 
-                    chart_time_level, date_map, current_highlight):
+    def update_chart(data, start_date_str, end_date_str, unit, sector_filter, time_level, click_data, table_highlight, axis_click, min_date_store, max_date_store):
         try:
-            # 0. Determine Trigger
-            triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+            # Determine Trigger and Highlight State
+            trigger_id = ctx.triggered[0]['prop_id'] if ctx.triggered else None
             
-            # 1. Resolve Highlight State Change
-            highlight_state = current_highlight # Default keep current
+            highlight_state = None
             
-            # If Filters or Time Levels changed, clear highlight
-            if triggered_id in ['asia-unit-filter', 'asia-sector-filter', 'store-asia-chart-data', 'asia-date-slider', 
-                               'chart-time-level']:
-                highlight_state = None
-                
-            # If Chart Bar Clicked -> Toggle Bar Selection
-            elif triggered_id == 'asia-gas-monthly-chart':
-                if not clickData:
-                    return no_update, no_update, no_update
+            # Priority: Axis Click > Chart Click > Table Click
+            if trigger_id == 'axis-click-trigger.value' and axis_click:
+                 # Parse axis click: "Date: <date>"
+                 parts = axis_click.split(': ')
+                 if len(parts) == 2:
+                     highlight_state = {'date': parts[1], 'type': 'month'}
+            elif trigger_id == 'asia-gas-monthly-chart.clickData' and click_data:
+                 # Chart Click logic
+                 point = click_data['points'][0]
+                 # If clicked on a bar segment
+                 date_str = point['x']
+                 # We need to map curve number to sector manually or get from point data
+                 sector = point.get('data', {}).get('name')
+                 
+                 highlight_state = {'date': date_str, 'sector': sector, 'type': 'bar'}
+                 
+            elif table_highlight:
+                 # Sync from Table
+                 highlight_state = table_highlight
 
-                if clickData and 'points' in clickData:
-                    point = clickData['points'][0]
-                    clicked_date = point.get('x')
-                    
-                    # Try to get sector from data.name, fallback to curveNumber
-                    clicked_sector = point.get('data', {}).get('name')
-                    if not clicked_sector:
-                        try:
-                            curve_num = point.get('curveNumber')
-                            sectors_to_plot = SECTOR_ORDER if sector == '(All)' else [sector]
-                            if curve_num is not None and 0 <= curve_num < len(sectors_to_plot):
-                                clicked_sector = sectors_to_plot[curve_num]
-                        except:
-                            pass
-                    
-                    # Robust String Cleaning & Lowercase for matching
-                    if clicked_date:
-                        clicked_date = str(clicked_date).replace('\xa0', ' ').strip()
-                    if clicked_sector:
-                        clicked_sector = str(clicked_sector).replace('\xa0', ' ').strip()
-                    
-                    if clicked_date and clicked_sector:
-                        # Prepare for comparison
-                        c_date_lower = clicked_date.lower()
-                        c_sector_lower = clicked_sector.lower()
-                        
-                        current_date = str(highlight_state.get('date')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('date') else ""
-                        current_sector = str(highlight_state.get('sector')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('sector') else ""
-                        
-                        # Toggle Logic (Case Insensitive)
-                        if (highlight_state and 
-                            highlight_state.get('type') == 'bar' and 
-                            current_date.lower() == c_date_lower and 
-                            current_sector.lower() == c_sector_lower):
-                            highlight_state = None
-                        else:
-                            highlight_state = {
-                                'type': 'bar',
-                                'date': clicked_date,   # Store original case for display/matching if needed, but comparisons should remain robust
-                                'sector': clicked_sector
-                            }
-            
-            # If Axis Clicked (Simulated) -> Month Selection
-            elif triggered_id == 'axis-click-trigger':
-                if axis_click_raw:
-                    # Parse "Month YYYY|TIMESTAMP" -> "Month YYYY"
-                    axis_click_date = axis_click_raw.split('|')[0].replace('\xa0', ' ').strip()
-                    
-                    current_date = str(highlight_state.get('date')).replace('\xa0', ' ').strip() if highlight_state and highlight_state.get('date') else ""
-                    
-                    if (highlight_state and 
-                        highlight_state.get('type') == 'month' and 
-                        current_date.lower() == axis_click_date.lower()):
-                        highlight_state = None
-                    else:
-                        highlight_state = {
-                            'type': 'month',
-                            'date': axis_click_date,
-                            'sector': None
-                        }
-            
-            # 2. Resolve Data Range
-            start_date = None
-            end_date = None
-            if date_map and date_range_idx:
-                try:
-                    start_date_str = date_map[date_range_idx[0]]
-                    end_date_str = date_map[date_range_idx[1]]
-                    start_date = pd.to_datetime(start_date_str)
-                    end_date = pd.to_datetime(end_date_str)
-                except:
-                    pass
-            
-            # 3. LOAD from Store
-            if chart_data is None:
-                return no_update, no_update, None
-                
-            df_chart = pd.DataFrame(chart_data)
-            
-            # Post-processing: Restore Dates
-            if not df_chart.empty and 'Date_Obj' in df_chart.columns:
-                df_chart['Date_Obj'] = pd.to_datetime(df_chart['Date_Obj'])
-            
-            # 4. FILTER
-            if not df_chart.empty:
-                df_chart = df_chart[df_chart['Unit'] == unit]
+            if not data:
+                return go.Figure(), "", highlight_state
 
-            if sector != '(All)':
-                if not df_chart.empty:
-                    df_chart = df_chart[df_chart['Sector'] == sector]
-
-            if start_date and end_date:
-                if not df_chart.empty:
-                    df_chart = df_chart[(df_chart['Date_Obj'] >= start_date) & (df_chart['Date_Obj'] <= end_date)]
-                    
-            # 5. Build Chart
-            if df_chart.empty:
-                fig = go.Figure()
+            df = pd.DataFrame(data)
+            # Reconstruct Date
+            if 'Date_Obj' not in df.columns:
+                df['Date_Obj'] = pd.to_datetime(df['Month of Date'], format='%B %Y')
             else:
-                fig = build_chart(df_chart, sector, unit, chart_time_level or 'MONTHLY', highlight_state)
-            
-            return fig, highlight_state, None
+                 df['Date_Obj'] = pd.to_datetime(df['Date_Obj'])
 
+            # Convert input strings to datetime (timezone naive)
+            if not start_date_str or not end_date_str:
+                 if min_date_store:
+                     start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                     end_date = pd.to_datetime(max_date_store).tz_localize(None)
+                 else:
+                     return go.Figure(), "", highlight_state
+            else:
+                start_date = pd.to_datetime(start_date_str).tz_localize(None)
+                end_date = pd.to_datetime(end_date_str).tz_localize(None)
+                
+            # Ensure DataFrame dates are timezone-naive
+            if df['Date_Obj'].dt.tz is not None:
+                 df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
+
+            # Filter Data by Date inputs
+            df_filtered = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)].copy()
+            
+            fig = build_chart(df_filtered, sector_filter, unit, time_level, highlight_state)
+            
+            return fig, "", highlight_state
+            
         except Exception as e:
             print(f"Error in update_chart: {e}")
             fig = go.Figure()
             fig.update_layout(title=f"Error: {str(e)}")
             return fig, no_update, None
 
+
     @dash_app.callback(
-        Output('asia-gas-monthly-table-container', 'children'),
-        [Input('asia-unit-filter', 'value'),
+        [Output('asia-gas-monthly-table-container', 'children'),
+         Output('loading-trigger-table', 'children')],
+        [Input('store-asia-table-data', 'data'),
+         Input('asia-sector-start-date', 'value'),
+         Input('asia-sector-end-date', 'value'),
+         Input('asia-unit-filter', 'value'),
          Input('asia-sector-filter', 'value'),
-         Input('store-asia-table-data', 'data'),
-         Input('asia-date-slider', 'value'),
          Input('table-time-level', 'data')],
-        [State('asia-date-map', 'data')]
+         [State('min-date', 'data'),
+         State('max-date', 'data')]
     )
-    def update_table(unit, sector, table_data, date_range_idx, table_time_level, date_map):
+    def update_table(data, start_date_str, end_date_str, unit, sector_filter, time_level, min_date_store, max_date_store):
         try:
-            # 1. Resolve Data Range
-            start_date = None
-            end_date = None
-            if date_map and date_range_idx:
-                try:
-                    start_date_str = date_map[date_range_idx[0]]
-                    end_date_str = date_map[date_range_idx[1]]
-                    start_date = pd.to_datetime(start_date_str)
-                    end_date = pd.to_datetime(end_date_str)
-                except:
-                    pass
-            
-            # 2. LOAD from Store
-            if table_data is None:
-                return no_update
-                
-            df_table = pd.DataFrame(table_data)
-            
-            # Post-processing: Restore Dates
-            if not df_table.empty and 'Date_Obj' in df_table.columns:
-                df_table['Date_Obj'] = pd.to_datetime(df_table['Date_Obj'])
+            if not data:
+                return html.Div("No data available."), ""
 
-            # 3. FILTER
-            if not df_table.empty:
-                df_table = df_table[df_table['Unit'] == unit]
-
-            if sector != '(All)':
-                if not df_table.empty:
-                    df_table = df_table[df_table['Sector'] == sector]
-
-            if start_date and end_date:
-                if not df_table.empty:
-                    df_table = df_table[(df_table['Date_Obj'] >= start_date) & (df_table['Date_Obj'] <= end_date)]
-                    
-            # 4. Build Table
-            if df_table.empty:
-                table_comp = html.Div("Data error or empty for selection")
+            df = pd.DataFrame(data)
+            # Reconstruct Date
+            if 'Date_Obj' not in df.columns:
+                df['Date_Obj'] = pd.to_datetime(df['Month of Date'], format='%B %Y')
             else:
-                table_comp = build_table(df_table, sector, unit, table_time_level or 'MONTHLY')
-                
-            return table_comp
+                 df['Date_Obj'] = pd.to_datetime(df['Date_Obj'])
 
+            # Convert input strings to datetime (timezone naive)
+            if not start_date_str or not end_date_str:
+                 if min_date_store:
+                     start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                     end_date = pd.to_datetime(max_date_store).tz_localize(None)
+                 else:
+                     return html.Div("No data available."), ""
+            else:
+                start_date = pd.to_datetime(start_date_str).tz_localize(None)
+                end_date = pd.to_datetime(end_date_str).tz_localize(None)
+                
+            # Ensure DataFrame dates are timezone-naive
+            if df['Date_Obj'].dt.tz is not None:
+                 df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
+
+            # Filter Data by Date
+            df_filtered = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)].copy()
+            
+            table = build_table(df_filtered, sector_filter, unit, time_level)
+            
+            return table, ""
+            
         except Exception as e:
             print(f"Error in update_table: {e}")
-            return html.Div(f"Error: {str(e)}")
+            return html.Div(f"Error: {str(e)}"), ""
 
-    # 2. Clientside Callback for tooltips text transformation on Slider (No Op, just for output)
-    # 2. Clientside Callback for updating Slider Date Labels
-    dash_app.clientside_callback(
-        """
-        function(value, date_map) {
-            if (!date_map || !value) return ["", ""];
-            return [date_map[value[0]], date_map[value[1]]];
-        }
-        """,
-        [Output('asia-date-label-start', 'children'),
-         Output('asia-date-label-end', 'children')],
-        Input('asia-date-slider', 'value'),
-        State('asia-date-map', 'data')
-    )
+
 
     # 3. Clientside Callback for Table Highlighting (Reused exactly)
     dash_app.clientside_callback(
@@ -2200,25 +2336,27 @@ def register_callbacks(dash_app, server):
         [State('asia-unit-filter', 'value'),
          State('asia-sector-filter', 'value'),
          State('asia-country-filter', 'value'),
-         State('asia-date-slider', 'value'),
-         State('asia-date-map', 'data')],
+         State('asia-sector-start-date', 'value'),
+         State('asia-sector-end-date', 'value'),
+         State('min-date', 'data'),
+         State('max-date', 'data')],
         prevent_initial_call=True
     )
-    def export_asia_chart_data(n_clicks, unit, sector, country, date_range_idx, date_map):
+    def export_asia_chart_data(n_clicks, unit, sector, country, start_date_str, end_date_str, min_date_store, max_date_store):
         if not n_clicks:
             return no_update
 
         try:
-            start_date = None
-            end_date = None
-            if date_range_idx and date_map:
-                try:
-                    start_date_str = date_map[date_range_idx[0]]
-                    end_date_str = date_map[date_range_idx[1]]
-                    start_date = pd.to_datetime(start_date_str)
-                    end_date = pd.to_datetime(end_date_str)
-                except:
-                    pass
+            # Convert input strings to datetime (timezone naive)
+            if not start_date_str or not end_date_str:
+                 if min_date_store:
+                     start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                     end_date = pd.to_datetime(max_date_store).tz_localize(None)
+                 else:
+                     return no_update
+            else:
+                start_date = pd.to_datetime(start_date_str).tz_localize(None)
+                end_date = pd.to_datetime(end_date_str).tz_localize(None)
 
             # Load data using the country filter
             df = load_chart_data(country)
@@ -2232,6 +2370,12 @@ def register_callbacks(dash_app, server):
             
             if sector != '(All)':
                 df = df[df['Sector'] == sector]
+                
+            # Ensure DataFrame dates are timezone-naive
+            if 'Date_Obj' in df.columns:
+                 df['Date_Obj'] = pd.to_datetime(df['Date_Obj'])
+                 if df['Date_Obj'].dt.tz is not None:
+                     df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
                 
             if start_date and end_date:
                 df = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)]
@@ -2255,25 +2399,27 @@ def register_callbacks(dash_app, server):
         [State('asia-unit-filter', 'value'),
          State('asia-sector-filter', 'value'),
          State('asia-country-filter', 'value'),
-         State('asia-date-slider', 'value'),
-         State('asia-date-map', 'data')],
+         State('asia-sector-start-date', 'value'),
+         State('asia-sector-end-date', 'value'),
+         State('min-date', 'data'),
+         State('max-date', 'data')],
         prevent_initial_call=True
     )
-    def export_asia_table_data(n_clicks, unit, sector, country, date_range_idx, date_map):
+    def export_asia_table_data(n_clicks, unit, sector, country, start_date_str, end_date_str, min_date_store, max_date_store):
         if not n_clicks:
             return no_update
 
         try:
-            start_date = None
-            end_date = None
-            if date_range_idx and date_map:
-                try:
-                    start_date_str = date_map[date_range_idx[0]]
-                    end_date_str = date_map[date_range_idx[1]]
-                    start_date = pd.to_datetime(start_date_str)
-                    end_date = pd.to_datetime(end_date_str)
-                except:
-                    pass
+            # Convert input strings to datetime (timezone naive)
+            if not start_date_str or not end_date_str:
+                 if min_date_store:
+                     start_date = pd.to_datetime(min_date_store).tz_localize(None)
+                     end_date = pd.to_datetime(max_date_store).tz_localize(None)
+                 else:
+                     return no_update
+            else:
+                start_date = pd.to_datetime(start_date_str).tz_localize(None)
+                end_date = pd.to_datetime(end_date_str).tz_localize(None)
 
             df = load_table_data(country)
             
@@ -2286,6 +2432,12 @@ def register_callbacks(dash_app, server):
             if sector != '(All)':
                 df = df[df['Sector'] == sector]
                 
+            # Ensure DataFrame dates are timezone-naive
+            if 'Date_Obj' in df.columns:
+                 df['Date_Obj'] = pd.to_datetime(df['Date_Obj'])
+                 if df['Date_Obj'].dt.tz is not None:
+                     df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
+                
             if start_date and end_date:
                 df = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)]
             
@@ -2297,6 +2449,7 @@ def register_callbacks(dash_app, server):
             filename = f"asia_gas_demand_table_{timestamp}.csv"
             
             return dcc.send_data_frame(df.to_csv, filename, index=False)
+
 
         except Exception as e:
             print(f"Error exporting table data: {e}")
