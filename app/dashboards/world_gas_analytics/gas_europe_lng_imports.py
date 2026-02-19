@@ -1247,15 +1247,11 @@ def register_callbacks(dash_app, server):
                                 color=colors,
                                 line=dict(color=line_colors, width=line_widths)
                             ),
-                            text=terminal_df['flows_bcm'].apply(lambda v: f"{v:.2f}" if v != 0 else ""),
-                            textposition='inside',
-                            insidetextanchor='middle',
-                            textfont=dict(color='white', size=9),
                             customdata=custom_data,
                             hovertemplate=(
-                                "<span style='color: #666'>Terminal:</span> %{customdata[0]}<br>"
-                                "<span style='color: #666'>Period:</span> %{customdata[1]}<br>"
-                                "<span style='color: #666'>Value:</span> %{y:,.3f} BCM<extra></extra>"
+                                "<span style='font-size:12px;color:#808080;'>Point:</span> %{customdata[0]}<br>"
+                                "<span style='font-size:12px;color:#808080;'>Month of Date:</span> %{customdata[1]}<br>"
+                                "<span style='font-size:12px;color:#808080;'>flows_bcm:</span> %{y:,.3f}<extra></extra>"
                             )
                         ))
                     
@@ -1281,7 +1277,13 @@ def register_callbacks(dash_app, server):
                         },
                         margin={'t': 40 if chart_title else 20, 'b': 100 if chart_granularity in ['month', 'day'] else 60, 'l': 60, 'r': 30},
                         height=450,
-                        showlegend=False
+                        showlegend=False,
+                        hoverlabel=dict(
+                            bgcolor="white",
+                            font_size=12,
+                            font_family="Arial, sans-serif",
+                            font_color="#333333"
+                        )
                     )
                 except Exception as chart_error:
                     print(f"Chart creation error: {chart_error}")
