@@ -313,24 +313,22 @@ def register_callbacks(dash_app, server):
                 const style = document.createElement('style');
                 style.id = baseStyleId;
                 style.innerHTML = `
-                    #${tableId} .dash-spreadsheet-container {
+                    #${tableId} {
                         cursor: pointer;
                     }
-                    #${tableId} .dash-spreadsheet-container td {
-                        transition: all 0.2s ease;
+                    #${tableId} td {
+                        transition: background-color 0.15s ease, color 0.15s ease;
                     }
                     /* Base selection state: dim normal data cells */
-                    #${tableId} .dash-spreadsheet-container.selection-active td {
+                    #${tableId}.selection-active td {
                         color: #ccc !important;
-                        background-color: transparent !important;
                     }
-                    /* Keep Day of Date column clear and undimmed */
-                    #${tableId} .dash-spreadsheet-container.selection-active td[data-dash-column="Day of Date"] {
+                    /* Keep Period of Date column undimmed */
+                    #${tableId}.selection-active td[data-dash-column="Period of Date"] {
                         color: #666 !important;
-                        opacity: 1 !important;
                     }
                     /* Highlight for selected column header */
-                    #${tableId} .dash-spreadsheet-container th.column-header-selected {
+                    #${tableId} th.column-header-selected {
                         background-color: #0075A8 !important;
                         color: white !important;
                     }
@@ -338,137 +336,101 @@ def register_callbacks(dash_app, server):
                 document.head.appendChild(style);
             }
             
-            // 2. Set up click listener on the table
+            // 2. Set up click listener on the table element directly
             const setupListener = () => {
                 const tableEl = document.getElementById(tableId);
                 if (!tableEl) return;
+                if (tableEl.dataset.highlightEnhanced === 'true') return;
+                tableEl.dataset.highlightEnhanced = 'true';
                 
-                const container = tableEl.querySelector('.dash-spreadsheet-container');
-                if (!container || container.dataset.highlightEnhanced === 'true') return;
-                
-                container.dataset.highlightEnhanced = 'true';
-                
-                container.addEventListener('click', function(e) {
+                tableEl.addEventListener('click', function(e) {
                     const header = e.target.closest('th[data-dash-column]');
-                    const cell = e.target.closest('td[data-dash-column]');
-                    
+                    const cell   = e.target.closest('td[data-dash-column]');
                     if (!header && !cell) return;
                     
                     const columnId = (header || cell).getAttribute('data-dash-column');
                     const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
-                    
                     if (columnId === 'Period of Date' && !rowIndex) return;
                     
-                    const isHeader = !!header;
-                    const headerRow = isHeader ? header.closest('tr') : null;
-                    const thead = isHeader ? header.closest('thead') : null;
-                    const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                    const isHeader    = !!header;
+                    const thead       = isHeader ? header.closest('thead') : null;
+                    const headerRows  = thead ? Array.from(thead.querySelectorAll('tr')) : [];
+                    const headerRow   = isHeader ? header.closest('tr') : null;
                     const headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
                     
-                    // Toggle logic
+                    // Toggle: clicking same cell/header twice clears selection
                     const selectionKey = isHeader ? (columnId + '_' + headerIndex) : (columnId + '_' + rowIndex);
-                    if (container.dataset.lastSelection === selectionKey) {
-                        container.dataset.lastSelection = '';
-                        container.classList.remove('selection-active');
-                        container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                    if (tableEl.dataset.lastSelection === selectionKey) {
+                        tableEl.dataset.lastSelection = '';
+                        tableEl.classList.remove('selection-active');
+                        tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
                         const dynStyle = document.getElementById(dynamicStyleId);
                         if (dynStyle) dynStyle.remove();
                         return;
                     }
-                    container.dataset.lastSelection = selectionKey;
-                    
-                    // Clear existing header highlights
-                    container.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
-                    
-                    // Apply highlighting
-                    container.classList.add('selection-active');
+                    tableEl.dataset.lastSelection = selectionKey;
+                    tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                    tableEl.classList.add('selection-active');
                     
                     let targetColumnIds = [columnId];
-                    let highlightRow = rowIndex;
                     
-                    // Discovery logic for child columns if a parent header is clicked
                     if (isHeader) {
                         const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
-                        
-                        console.log('Header clicked:', header.innerText, 'Colspan:', colspan, 'HeaderIndex:', headerIndex);
-                        
                         if (colspan > 1) {
-                            // Robust Discovery: Find the data row that actually contains this column
-                            // This handles fixed_rows (split header/body) and fixed_columns (split left/right)
-                            const parentId = header.getAttribute('data-dash-column');
-                            const allTbodies = Array.from(container.querySelectorAll('tbody'));
+                            // Gather leaf column IDs from the last header row (row 4 = entry points)
+                            const lastHeaderRow = headerRows[headerRows.length - 1];
+                            const leafThs = lastHeaderRow
+                                ? Array.from(lastHeaderRow.querySelectorAll('th[data-dash-column]'))
+                                : [];
+                            const leafIds = leafThs.map(th => th.getAttribute('data-dash-column'));
                             
-                            let targetRow = null;
-                            let startIdx = -1;
-                            let leafIds = [];
-
-                            // Search for the row containing our start column
-                            for (let tbody of allTbodies) {
-                                const row = tbody.querySelector('tr');
-                                if (!row) continue;
-                                
-                                const cells = Array.from(row.querySelectorAll('td'));
-                                const ids = cells.map(td => td.getAttribute('data-dash-column'));
-                                const idx = ids.indexOf(parentId);
-                                
-                                if (idx !== -1) {
-                                    targetRow = row;
-                                    startIdx = idx;
-                                    leafIds = ids;
-                                    break;
-                                }
+                            // Count how many columns come before the clicked <th> in its row
+                            const allCellsInRow = Array.from(header.closest('tr').querySelectorAll('th'));
+                            let colStart = 0;
+                            for (let th of allCellsInRow) {
+                                if (th === header) break;
+                                // The date column has rowSpan and no colspan; treat as 1 col
+                                colStart += parseInt(th.getAttribute('colspan') || th.colSpan || '1');
                             }
-                            
-                            if (targetRow && startIdx !== -1) {
-                                const endIdx = Math.min(startIdx + colspan, leafIds.length);
-                                targetColumnIds = leafIds.slice(startIdx, endIdx);
-                            } else {
-                                targetColumnIds = [columnId];
+                            // Subtract 1 for the rowSpan date placeholder in rows 0–3
+                            // (it contributes colStart=1 but is not in leafIds)
+                            if (headerIndex < headerRows.length - 1) {
+                                colStart = Math.max(0, colStart - 1);
                             }
+                            targetColumnIds = leafIds.slice(colStart, colStart + colspan);
                         } else {
-                            // Single column header clicked
                             header.classList.add('column-header-selected');
-                            console.log('Single column header, using columnId:', columnId);
                         }
                     }
                     
-                    // Generate Dynamic CSS for high contrast highlights
                     let dynamicStyles = '';
                     
-                    console.log('Generating styles for columns:', targetColumnIds);
-                    
-                    // 1. Column(s) Highlighting
-                    if (targetColumnIds.length > 0) {
-                        targetColumnIds.forEach(id => {
-                            dynamicStyles += `
-                                #${tableId} .dash-spreadsheet-container td[data-dash-column="${id}"] {
-                                    background-color: #e1f0ff !important;
-                                    color: #1b365d !important;
-                                    font-weight: 600 !important;
-                                }
-                            `;
-                        });
-                    }
-                    
-                    // 2. Row Highlighting
-                    if (highlightRow !== null) {
+                    // Column highlight
+                    targetColumnIds.forEach(cid => {
                         dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container tr:has(td[data-dash-row="${highlightRow}"]) td {
+                            #${tableId}.selection-active td[data-dash-column="${cid}"] {
                                 background-color: #e1f0ff !important;
                                 color: #1b365d !important;
                                 font-weight: 600 !important;
                             }
                         `;
-                        // 3. Active Cell with intense border and background
+                    });
+                    
+                    // Row + active-cell highlight
+                    if (rowIndex !== null) {
                         dynamicStyles += `
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="${columnId}"][data-dash-row="${highlightRow}"] {
-                                border: 2px solid #fe5000 !important;
-                                border-radius: 2px;
-                                z-index: 10 !important;
-                                position: relative;
+                            #${tableId}.selection-active tr:has(td[data-dash-row="${rowIndex}"]) td {
+                                background-color: #e1f0ff !important;
+                                color: #1b365d !important;
+                                font-weight: 600 !important;
                             }
-                            /* Special highlight for the Day of Date cell in the selected row */
-                            #${tableId} .dash-spreadsheet-container td[data-dash-column="Day of Date"][data-dash-row="${highlightRow}"] {
+                            #${tableId}.selection-active td[data-dash-column="${columnId}"][data-dash-row="${rowIndex}"] {
+                                outline: 2px solid #fe5000 !important;
+                                outline-offset: -2px;
+                                position: relative;
+                                z-index: 10 !important;
+                            }
+                            #${tableId}.selection-active td[data-dash-column="Period of Date"][data-dash-row="${rowIndex}"] {
                                 background-color: #b3d9ff !important;
                                 color: #1b365d !important;
                                 font-weight: bold !important;
@@ -490,13 +452,13 @@ def register_callbacks(dash_app, server):
             if (!window._gasFlowsTableInterval) {
                 window._gasFlowsTableInterval = setInterval(setupListener, 1000);
             }
-            
             return null;
         }
         """,
         Output('gas-flows-table-enhancer-anchor', 'children'),
         Input('gas-flows-table-enhancer-anchor', 'id')
     )
+
 
     @dash_app.callback(
         Output('gas-origin-legend-items', 'children'),
@@ -1200,124 +1162,271 @@ def register_callbacks(dash_app, server):
                         d_row["_".join(map(str, col))] = ""
                 table_data.append(d_row)
 
-            return dash_table.DataTable(
+            # ----------------------------------------------------------------
+            # Build a custom HTML table for correct borders & scroll alignment.
+            # Dash DataTable with fixed_rows + fixed_columns + virtualization
+            # creates 4 separate DOM tables, which breaks continuous borders
+            # and causes column drift. A single HTML table with CSS sticky
+            # avoids all of those issues.
+            # ----------------------------------------------------------------
+
+            # --- Compute colspan spans for header rows 0-2 ---
+            # Row 0: "Exporter" spanning each gas_origin group
+            # Row 1: gas_origin name spanning each (origin) group
+            # Row 2: "Importer" spanning each target_country
+            # Row 3: target_country spanning each point
+            # Row 4: one <th> per leaf column
+
+            def make_spans(hier_cols):
+                """Return list of (label, colspan) groups for each header level."""
+                spans = [[], [], [], [], []]
+                for col in hier_cols:
+                    header_exp, origin, header_imp, target, point = col
+                    # Row 0 – Exporter group
+                    if spans[0] and spans[0][-1][0] == origin:
+                        spans[0][-1][1] += 1
+                    else:
+                        spans[0].append([origin, 1])   # keyed on origin for grouping
+                    # Row 1 – gas origin label
+                    if spans[1] and spans[1][-1][0] == origin:
+                        spans[1][-1][1] += 1
+                    else:
+                        spans[1].append([origin, 1])
+                    # Row 2 – Importer group
+                    if spans[2] and spans[2][-1][0] == (origin, target):
+                        spans[2][-1][1] += 1
+                    else:
+                        spans[2].append([(origin, target), 1])
+                    # Row 3 – target country label
+                    if spans[3] and spans[3][-1][0] == (origin, target):
+                        spans[3][-1][1] += 1
+                    else:
+                        spans[3].append([(origin, target), 1])
+                    # Row 4 – leaf point
+                    spans[4].append([(origin, target, point), 1])
+                return spans
+
+            spans = make_spans(hier_cols)
+
+            # Pre-compute the set of first-column IDs for group-boundary detection
+            border_first_set = set(border_col_ids_first)
+            border_last_set  = set(border_col_ids_last)
+
+            # Row heights for sticky offsets (px). These match the CSS padding/font.
+            ROW_H = [28, 32, 28, 28, 28]  # header rows 0-4
+
+            def sticky_top(row_idx):
+                return sum(ROW_H[:row_idx])
+
+            # Common th/td styles
+            BASE_TH = {
+                'fontFamily': 'Inter, sans-serif',
+                'border': '1px solid #dee2e6',
+                'padding': '6px 8px',
+                'whiteSpace': 'nowrap',
+                'textAlign': 'center',
+                'boxSizing': 'border-box',
+            }
+            DATE_COL_W = '150px'
+            DATA_COL_W = '100px'
+
+            # ── HEADER ROW STYLES ──────────────────────────────────────────
+            ROW_STYLES = [
+                # Row 0 – Exporter
+                {'backgroundColor': '#e9ecef', 'color': EI_DARK_BLUE,
+                 'fontWeight': 'bold', 'fontSize': '11px'},
+                # Row 1 – gas origin
+                {'backgroundColor': '#f8f9fa', 'color': '#212529',
+                 'fontSize': '13px', 'fontWeight': 'bold'},
+                # Row 2 – Importer
+                {'backgroundColor': '#e9ecef', 'color': EI_DARK_BLUE,
+                 'fontWeight': 'bold', 'fontSize': '11px'},
+                # Row 3 – target country
+                {'backgroundColor': 'white', 'color': EI_DARK_BLUE,
+                 'fontWeight': 'bold', 'fontSize': '12px'},
+                # Row 4 – entry point
+                {'backgroundColor': 'white', 'color': '#666',
+                 'fontSize': '11px'},
+            ]
+
+            # ── BUILD THEAD ───────────────────────────────────────────────
+            thead_rows = []
+
+            # ---- ROWS 0-3: spanned header rows ----
+            for row_idx in range(4):
+                # "Period of Date" placeholder cell spans all 4 top rows only in row 0
+                cells = []
+                if row_idx == 0:
+                    cells.append(html.Th(
+                        '',
+                        rowSpan=4,
+                        style={
+                            **BASE_TH,
+                            **ROW_STYLES[row_idx],
+                            'position': 'sticky',
+                            'top':  f'{sticky_top(row_idx)}px',
+                            'left': '0',
+                            'zIndex': 5,
+                            'minWidth': DATE_COL_W,
+                            'width':    DATE_COL_W,
+                            'backgroundColor': '#e9ecef',
+                            'borderRight': '2px solid #666',
+                        }
+                    ))
+
+                # Labels for rows 0-3 (Exporter / origin / Importer / target)
+                span_row = spans[row_idx]
+
+                # Track running column index to know if a cell lands on a border
+                col_cursor = 0
+                for label_key, cs in span_row:
+                    # Is the first leaf column of this span a group-border?
+                    first_leaf_id = "_".join(map(str, hier_cols[col_cursor]))
+                    is_first = first_leaf_id in border_first_set
+
+                    display_label = label_key if isinstance(label_key, str) else label_key[1]  # target_country
+                    if row_idx == 0:
+                        display_label = 'Exporter'
+                    if row_idx == 2:
+                        display_label = 'Importer'
+
+                    extra_border = {'borderLeft': '2px solid #666'} if is_first else {}
+
+                    cells.append(html.Th(
+                        display_label,
+                        colSpan=cs,
+                        style={
+                            **BASE_TH,
+                            **ROW_STYLES[row_idx],
+                            'position': 'sticky',
+                            'top': f'{sticky_top(row_idx)}px',
+                            'zIndex': 3,
+                            **extra_border,
+                        }
+                    ))
+                    col_cursor += cs
+
+                thead_rows.append(html.Tr(cells))
+
+            # ---- ROW 4: leaf / entry-point row ----
+            leaf_cells = [
+                html.Th(
+                    'Period of Date',
+                    style={
+                        **BASE_TH,
+                        **ROW_STYLES[4],
+                        'position': 'sticky',
+                        'top':  f'{sticky_top(4)}px',
+                        'left': '0',
+                        'zIndex': 5,
+                        'minWidth': DATE_COL_W,
+                        'width':    DATE_COL_W,
+                        'backgroundColor': 'white',
+                        'borderRight': '2px solid #666',
+                        'fontWeight': 'bold',
+                        'color': EI_DARK_BLUE,
+                    }
+                )
+            ]
+            for col in hier_cols:
+                col_id = "_".join(map(str, col))
+                is_first = col_id in border_first_set
+                extra_border = {'borderLeft': '2px solid #666'} if is_first else {}
+                leaf_cells.append(html.Th(
+                    col[4],  # Interconnection Point label
+                    **{'data-dash-column': col_id},
+                    style={
+                        **BASE_TH,
+                        **ROW_STYLES[4],
+                        'position': 'sticky',
+                        'top': f'{sticky_top(4)}px',
+                        'zIndex': 3,
+                        'minWidth': DATA_COL_W,
+                        'width':    DATA_COL_W,
+                        **extra_border,
+                    }
+                ))
+            thead_rows.append(html.Tr(leaf_cells))
+
+            # ── BUILD TBODY ───────────────────────────────────────────────
+            tbody_rows = []
+            for row_idx_d, row in enumerate(table_data):
+                is_odd = (row_idx_d % 2 == 1)
+                row_bg = '#f8f9fa' if is_odd else 'white'
+
+                td_date = html.Td(
+                    row.get('Period of Date', ''),
+                    **{'data-dash-column': 'Period of Date',
+                       'data-dash-row': str(row_idx_d)},
+                    style={
+                        'fontFamily': 'Inter, sans-serif',
+                        'fontSize': '11px',
+                        'padding': '6px 8px',
+                        'border': '1px solid #dee2e6',
+                        'borderRight': '2px solid #999',
+                        'whiteSpace': 'nowrap',
+                        'textAlign': 'left',
+                        'color': '#666',
+                        'position': 'sticky',
+                        'left': '0',
+                        'zIndex': 2,
+                        'backgroundColor': row_bg,
+                        'minWidth': DATE_COL_W,
+                        'width':    DATE_COL_W,
+                        'boxSizing': 'border-box',
+                    }
+                )
+
+                data_cells = [td_date]
+                for col in hier_cols:
+                    col_id = "_".join(map(str, col))
+                    val = row.get(col_id, '')
+                    is_first = col_id in border_first_set
+                    extra_border = {'borderLeft': '2px solid #666'} if is_first else {}
+                    data_cells.append(html.Td(
+                        val,
+                        **{'data-dash-column': col_id,
+                           'data-dash-row': str(row_idx_d)},
+                        style={
+                            'fontFamily': 'Inter, sans-serif',
+                            'fontSize': '11px',
+                            'padding': '6px 8px',
+                            'border': '1px solid #dee2e6',
+                            'textAlign': 'center',
+                            'color': '#333',
+                            'backgroundColor': row_bg,
+                            'minWidth': DATA_COL_W,
+                            'width':    DATA_COL_W,
+                            'boxSizing': 'border-box',
+                            **extra_border,
+                        }
+                    ))
+
+                tbody_rows.append(html.Tr(data_cells))
+
+            # ── ASSEMBLE TABLE ────────────────────────────────────────────
+            table = html.Table(
+                [html.Thead(thead_rows), html.Tbody(tbody_rows)],
                 id='gas-flows-data-table',
-                columns=table_columns,
-                data=table_data,
-                merge_duplicate_headers=True,
-                page_action='none',
-                fill_width=True,
-                style_table={
+                style={
+                    'borderCollapse': 'collapse',
+                    'width': 'max-content',
+                    'minWidth': '100%',
+                    'tableLayout': 'fixed',
+                }
+            )
+
+            return html.Div(
+                table,
+                style={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
                     'height': '600px',
                     'width': '100%',
-                    'minWidth': '100%',
-                    'border': 'none',
-                    'marginTop': '10px'
-                },
-                style_header={
-                    'backgroundColor': 'white',
-                    'color': EI_DARK_BLUE,
-                    'fontWeight': 'bold',
-                    'textAlign': 'center',
-                    'fontSize': '12px',
-                    'fontFamily': 'Inter, sans-serif',
+                    'position': 'relative',
+                    'marginTop': '10px',
                     'border': '1px solid #dee2e6',
-                    'padding': '10px'
-                },
-                style_cell={
-                    'padding': '8px',
-                    'textAlign': 'center',
-                    'fontSize': '11px',
-                    'fontFamily': 'Inter, sans-serif',
-                    'border': '1px solid #dee2e6',
-                    'color': '#333',
-                    'minWidth': '100px'
-                },
-                style_data_conditional=[
-                    {
-                        'if': {'column_id': 'Period of Date'},
-                        'textAlign': 'left',
-                        'fontWeight': 'normal',
-                        'color': '#666',
-                        'minWidth': '180px',
-                        'borderRight': '2px solid #999' # Thicker border for date column
-                    },
-                    {
-                        'if': {'column_id': border_col_ids_first},
-                        'borderLeft': '2px solid #666'
-                    },
-                    {
-                        'if': {'column_id': border_col_ids_last},
-                        'borderRight': '2px solid #666'
-                    },
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#f8f9fa'
-                    },
-                    {
-                        'if': {'state': 'active'},
-                        'backgroundColor': '#fdeedc',
-                        'border': '1px solid #fe5000'
-                    },
-                    {
-                        'if': {'state': 'selected'},
-                        'backgroundColor': '#e1f0ff',
-                        'border': '1px solid #3390ff'
-                    }
-                ],
-                style_header_conditional=[
-                    {
-                        'if': {'header_index': 0}, # Exporter title row
-                        'backgroundColor': '#e9ecef',
-                        'color': EI_DARK_BLUE,
-                        'fontWeight': 'bold',
-                        'fontSize': '11px'
-                    },
-                    {
-                        'if': {'header_index': 1}, # Gas Origin row
-                        'backgroundColor': '#f8f9fa',
-                        'color': '#212529',
-                        'fontSize': '13px',
-                        'fontWeight': 'bold'
-                    },
-                    {
-                        'if': {'header_index': 2}, # Importer title row
-                        'backgroundColor': '#e9ecef',
-                        'color': EI_DARK_BLUE,
-                        'fontWeight': 'bold',
-                        'fontSize': '11px'
-                    },
-                    {
-                        'if': {'header_index': 3}, # Target Country row
-                        'backgroundColor': 'white',
-                        'color': EI_DARK_BLUE,
-                        'fontWeight': 'bold',
-                        'fontSize': '12px'
-                    },
-                    {
-                        'if': {'header_index': 4}, # Interconnection Point row
-                        'backgroundColor': 'white',
-                        'fontSize': '11px',
-                        'color': '#666'
-                    },
-                    {
-                        'if': {'column_id': border_col_ids_first},
-                        'borderLeft': '2px solid #666'
-                    },
-                    {
-                        'if': {'column_id': border_col_ids_last},
-                        'borderRight': '2px solid #666'
-                    },
-                    {
-                        'if': {'column_id': 'Period of Date'},
-                        'borderRight': '2px solid #666'
-                    }
-                ],
-                fixed_rows={'headers': True},
-                fixed_columns={'headers': True, 'data': 1},
-                virtualization=True
+                }
             )
 
         except Exception as e:
