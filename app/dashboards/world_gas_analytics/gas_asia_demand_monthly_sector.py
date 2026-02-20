@@ -1973,8 +1973,12 @@ def register_callbacks(dash_app, server):
             if df['Date_Obj'].dt.tz is not None:
                  df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
 
-            # Filter Data by Date inputs
+            # Filter Data by Date inputs and Unit
             df_filtered = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)].copy()
+            
+            # Filter by selected unit
+            if 'Unit' in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered['Unit'] == unit].copy()
             
             fig = build_chart(df_filtered, sector_filter, unit, time_level, highlight_state)
             
@@ -2026,8 +2030,12 @@ def register_callbacks(dash_app, server):
             if df['Date_Obj'].dt.tz is not None:
                  df['Date_Obj'] = df['Date_Obj'].dt.tz_localize(None)
 
-            # Filter Data by Date
+            # Filter Data by Date and Unit
             df_filtered = df[(df['Date_Obj'] >= start_date) & (df['Date_Obj'] <= end_date)].copy()
+            
+            # Filter by selected unit
+            if 'Unit' in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered['Unit'] == unit].copy()
             
             table = build_table(df_filtered, sector_filter, unit, time_level)
             
