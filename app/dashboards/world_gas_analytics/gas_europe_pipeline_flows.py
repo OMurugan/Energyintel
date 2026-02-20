@@ -308,32 +308,49 @@ def register_callbacks(dash_app, server):
             const baseStyleId = 'gas-flows-table-base-css';
             const dynamicStyleId = 'gas-flows-table-dynamic-highlight-css';
             
-            // 1. Inject Base CSS if not present
+            // 1. Inject Base CSS once
+            // data-gas-hl values on spanning header <th> cells (rows 0-3):
+            //   'left' | 'right' | 'both' | 'mid'
+            // Using CSS + attribute avoids mutating inline styles, so the
+            // Python-set borderLeft separator lines are always preserved.
             if (!document.getElementById(baseStyleId)) {
                 const style = document.createElement('style');
                 style.id = baseStyleId;
                 style.innerHTML = `
-                    #${tableId} {
-                        cursor: pointer;
-                    }
+                    #${tableId} { cursor: pointer; }
                     #${tableId} td {
                         transition: background-color 0.15s ease, color 0.15s ease;
                     }
-                    /* Base selection state: dim normal data cells */
-                    #${tableId}.selection-active td {
-                        color: #ccc !important;
-                    }
-                    /* Keep Period of Date column undimmed */
+                    /* Dim all body cells when a column is selected */
+                    #${tableId}.selection-active td { color: #ccc !important; }
+                    /* Keep Period of Date readable */
                     #${tableId}.selection-active td[data-dash-column="Period of Date"] {
                         color: #666 !important;
                     }
-                    /* Highlight for selected column header */
-                    #${tableId} th.column-header-selected {
-                        background-color: #0075A8 !important;
-                        color: white !important;
+                    /* Spanning header highlight via data-gas-hl attribute */
+                    #${tableId} thead th[data-gas-hl] {
+                        background-color: #ddeeff !important;
+                        color: #1b365d !important;
+                    }
+                    #${tableId} thead th[data-gas-hl="left"],
+                    #${tableId} thead th[data-gas-hl="both"] {
+                        border-left: 2px solid #5599dd !important;
+                    }
+                    #${tableId} thead th[data-gas-hl="right"],
+                    #${tableId} thead th[data-gas-hl="both"] {
+                        border-right: 2px solid #5599dd !important;
                     }
                 `;
                 document.head.appendChild(style);
+            }
+
+            // 2. Helper: clear ALL highlight state cleanly
+            function clearHighlight(tableEl) {
+                tableEl.classList.remove('selection-active');
+                // Remove data-gas-hl attribute – NEVER touch inline styles
+                tableEl.querySelectorAll('th[data-gas-hl]').forEach(th => th.removeAttribute('data-gas-hl'));
+                const dynStyle = document.getElementById(dynamicStyleId);
+                if (dynStyle) dynStyle.remove();
             }
             
             // 2. Set up click listener on the table element directly
@@ -344,84 +361,142 @@ def register_callbacks(dash_app, server):
                 tableEl.dataset.highlightEnhanced = 'true';
                 
                 tableEl.addEventListener('click', function(e) {
+                    // Detect click on a leaf column header (row 4, has data-dash-column)
                     const header = e.target.closest('th[data-dash-column]');
+                    // Detect click on a spanning header (rows 0-3, has data-leaf-start)
+                    const spanHeader = !header ? e.target.closest('th[data-leaf-start]') : null;
                     const cell   = e.target.closest('td[data-dash-column]');
-                    if (!header && !cell) return;
+                    if (!header && !spanHeader && !cell) return;
                     
-                    const columnId = (header || cell).getAttribute('data-dash-column');
-                    const rowIndex = cell ? cell.getAttribute('data-dash-row') : null;
-                    if (columnId === 'Period of Date' && !rowIndex) return;
+                    const thead      = tableEl.querySelector('thead');
+                    const headerRows = thead ? Array.from(thead.querySelectorAll('tr')) : [];
                     
-                    const isHeader    = !!header;
-                    const thead       = isHeader ? header.closest('thead') : null;
-                    const headerRows  = thead ? Array.from(thead.querySelectorAll('tr')) : [];
-                    const headerRow   = isHeader ? header.closest('tr') : null;
+                    // Resolve leaf column IDs (from last header row = entry point row)
+                    const lastHeaderRow = headerRows.length > 0 ? headerRows[headerRows.length - 1] : null;
+                    const leafThs = lastHeaderRow
+                        ? Array.from(lastHeaderRow.querySelectorAll('th[data-dash-column]'))
+                        : [];
+                    const leafIds = leafThs.map(th => th.getAttribute('data-dash-column'));
+                    
+                    let columnId  = null;
+                    let rowIndex  = cell ? cell.getAttribute('data-dash-row') : null;
+                    let targetColumnIds = [];
+                    
+                    if (header) {
+                        // Leaf header cell (row 4)
+                        columnId = header.getAttribute('data-dash-column');
+                        if (columnId === 'Period of Date') return;
+                        targetColumnIds = [columnId];
+                    } else if (spanHeader) {
+                        // Spanning header (rows 0-3): resolve using data-leaf-start & data-leaf-span
+                        const leafStart = parseInt(spanHeader.getAttribute('data-leaf-start') || '0');
+                        const leafSpan  = parseInt(spanHeader.getAttribute('data-leaf-span')  || '1');
+                        targetColumnIds = leafIds.slice(leafStart, leafStart + leafSpan);
+                        if (targetColumnIds.length === 0) return;
+                        columnId = spanHeader.getAttribute('data-leaf-start'); // use as key
+                    } else if (cell) {
+                        columnId = cell.getAttribute('data-dash-column');
+                        if (columnId === 'Period of Date' && !rowIndex) return;
+                        targetColumnIds = [columnId];
+                    }
+                    
+                    const isHeader = !!(header || spanHeader);
+                    const clickedTh = header || spanHeader;
+                    const headerRow   = isHeader && clickedTh ? clickedTh.closest('tr') : null;
                     const headerIndex = headerRow ? headerRows.indexOf(headerRow) : -1;
                     
-                    // Toggle: clicking same cell/header twice clears selection
-                    const selectionKey = isHeader ? (columnId + '_' + headerIndex) : (columnId + '_' + rowIndex);
+                    // Toggle: same click twice → clear and exit
+                    const selectionKey = isHeader
+                        ? (targetColumnIds.join(',') + '_h' + headerIndex)
+                        : (columnId + '_' + rowIndex);
                     if (tableEl.dataset.lastSelection === selectionKey) {
                         tableEl.dataset.lastSelection = '';
-                        tableEl.classList.remove('selection-active');
-                        tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
-                        const dynStyle = document.getElementById(dynamicStyleId);
-                        if (dynStyle) dynStyle.remove();
+                        clearHighlight(tableEl);
                         return;
                     }
+                    // New selection: clear previous then apply
                     tableEl.dataset.lastSelection = selectionKey;
-                    tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                    clearHighlight(tableEl);
                     tableEl.classList.add('selection-active');
                     
-                    let targetColumnIds = [columnId];
-                    
-                    if (isHeader) {
-                        const colspan = parseInt(header.getAttribute('colspan') || header.colSpan || '1');
-                        if (colspan > 1) {
-                            // Gather leaf column IDs from the last header row (row 4 = entry points)
-                            const lastHeaderRow = headerRows[headerRows.length - 1];
-                            const leafThs = lastHeaderRow
-                                ? Array.from(lastHeaderRow.querySelectorAll('th[data-dash-column]'))
-                                : [];
-                            const leafIds = leafThs.map(th => th.getAttribute('data-dash-column'));
-                            
-                            // Count how many columns come before the clicked <th> in its row
-                            const allCellsInRow = Array.from(header.closest('tr').querySelectorAll('th'));
-                            let colStart = 0;
-                            for (let th of allCellsInRow) {
-                                if (th === header) break;
-                                // The date column has rowSpan and no colspan; treat as 1 col
-                                colStart += parseInt(th.getAttribute('colspan') || th.colSpan || '1');
-                            }
-                            // Subtract 1 for the rowSpan date placeholder in rows 0–3
-                            // (it contributes colStart=1 but is not in leafIds)
-                            if (headerIndex < headerRows.length - 1) {
-                                colStart = Math.max(0, colStart - 1);
-                            }
-                            targetColumnIds = leafIds.slice(colStart, colStart + colspan);
-                        } else {
-                            header.classList.add('column-header-selected');
-                        }
+                    // ── Style constants ──────────────────────────────────────────
+                    const HIGHLIGHT_BG    = '#ddeeff';
+                    const HIGHLIGHT_COLOR = '#1b365d';
+                    const BORDER_COLOR    = '#5599dd';
+                    const BORDER_W        = '2px';
+
+                    // Helper: build border CSS for a cell given its position in the target range
+                    function borderCSS(idx, total) {
+                        const isFirst = idx === 0;
+                        const isLast  = idx === total - 1;
+                        let s = '';
+                        if (isFirst)  s += `border-left: ${BORDER_W} solid ${BORDER_COLOR} !important; `;
+                        if (isLast)   s += `border-right: ${BORDER_W} solid ${BORDER_COLOR} !important; `;
+                        return s;
                     }
-                    
+
                     let dynamicStyles = '';
-                    
-                    // Column highlight
-                    targetColumnIds.forEach(cid => {
+
+                    // ── A. Body (td) cells: background + side borders ─────────────
+                    targetColumnIds.forEach((cid, idx) => {
                         dynamicStyles += `
                             #${tableId}.selection-active td[data-dash-column="${cid}"] {
-                                background-color: #e1f0ff !important;
-                                color: #1b365d !important;
+                                background-color: ${HIGHLIGHT_BG} !important;
+                                color: ${HIGHLIGHT_COLOR} !important;
                                 font-weight: 600 !important;
+                                ${borderCSS(idx, targetColumnIds.length)}
                             }
                         `;
                     });
-                    
-                    // Row + active-cell highlight
+
+                    // ── B. Leaf header row (row 4, data-dash-column) via dynamic CSS ──
+                    const targetStartIdx = leafIds.indexOf(targetColumnIds[0]);
+                    const targetEndIdx   = leafIds.indexOf(targetColumnIds[targetColumnIds.length - 1]);
+
+                    targetColumnIds.forEach((cid, idx) => {
+                        let borderRule = '';
+                        if (idx === 0)
+                            borderRule += `border-left: ${BORDER_W} solid ${BORDER_COLOR} !important; `;
+                        if (idx === targetColumnIds.length - 1)
+                            borderRule += `border-right: ${BORDER_W} solid ${BORDER_COLOR} !important; `;
+                        dynamicStyles += `
+                            #${tableId} thead th[data-dash-column="${cid}"] {
+                                background-color: ${HIGHLIGHT_BG} !important;
+                                color: ${HIGHLIGHT_COLOR} !important;
+                                ${borderRule}
+                            }
+                        `;
+                    });
+
+                    // ── C. Spanning header cells (rows 0-3) via data-gas-hl attribute ─
+                    // CRITICAL: we ONLY set an attribute – inline styles are never mutated.
+                    // The Python-set borderLeft separator lines are always preserved.
+                    headerRows.forEach((hrow, hrowIdx) => {
+                        if (hrowIdx === headerRows.length - 1) return; // leaf row handled above
+                        Array.from(hrow.querySelectorAll('th')).forEach(th => {
+                            const ls  = parseInt(th.getAttribute('data-leaf-start') || '-1');
+                            const lsp = parseInt(th.getAttribute('data-leaf-span')  || '1');
+                            if (ls < 0) return; // date placeholder
+                            const le = ls + lsp - 1;
+                            // Overlap: [ls..le] ∩ [targetStartIdx..targetEndIdx]
+                            if (Math.max(ls, targetStartIdx) > Math.min(le, targetEndIdx)) return;
+                            const coversFirst = (targetStartIdx >= ls && targetStartIdx <= le);
+                            const coversLast  = (targetEndIdx   >= ls && targetEndIdx   <= le);
+                            let hlVal;
+                            if (coversFirst && coversLast) hlVal = 'both';
+                            else if (coversFirst)          hlVal = 'left';
+                            else if (coversLast)           hlVal = 'right';
+                            else                           hlVal = 'mid';
+                            th.setAttribute('data-gas-hl', hlVal);
+                        });
+                    });
+
+                    // ── C. Row + active-cell highlight (body cell click only) ────
                     if (rowIndex !== null) {
                         dynamicStyles += `
                             #${tableId}.selection-active tr:has(td[data-dash-row="${rowIndex}"]) td {
-                                background-color: #e1f0ff !important;
-                                color: #1b365d !important;
+                                background-color: ${HIGHLIGHT_BG} !important;
+                                color: ${HIGHLIGHT_COLOR} !important;
                                 font-weight: 600 !important;
                             }
                             #${tableId}.selection-active td[data-dash-column="${columnId}"][data-dash-row="${rowIndex}"] {
@@ -432,7 +507,7 @@ def register_callbacks(dash_app, server):
                             }
                             #${tableId}.selection-active td[data-dash-column="Period of Date"][data-dash-row="${rowIndex}"] {
                                 background-color: #b3d9ff !important;
-                                color: #1b365d !important;
+                                color: ${HIGHLIGHT_COLOR} !important;
                                 font-weight: bold !important;
                             }
                         `;
@@ -1295,6 +1370,7 @@ def register_callbacks(dash_app, server):
                     cells.append(html.Th(
                         display_label,
                         colSpan=cs,
+                        **{'data-leaf-start': str(col_cursor), 'data-leaf-span': str(cs)},
                         style={
                             **BASE_TH,
                             **ROW_STYLES[row_idx],
