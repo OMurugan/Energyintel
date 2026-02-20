@@ -460,12 +460,33 @@ def create_layout():
                     }),
 
                     dcc.Loading(
-                        [
-                            html.Div(id='loading-trigger-chart', style={'display': 'none'}),
-                            dcc.Graph(id='asia-gas-monthly-chart', config={'displayModeBar': False})
-                        ],
+                        dcc.Graph(
+                            id='asia-gas-monthly-chart',
+                            figure={
+                                'data': [],
+                                'layout': {
+                                    'xaxis': {'visible': False},
+                                    'yaxis': {'visible': False},
+                                    'annotations': [{
+                                        'text': '',
+                                        'xref': 'paper',
+                                        'yref': 'paper',
+                                        'showarrow': False,
+                                        'font': {'size': 1}
+                                    }],
+                                    'plot_bgcolor': 'white',
+                                    'paper_bgcolor': 'white',
+                                    'height': 500,
+                                    'margin': {'t': 0, 'b': 0, 'l': 0, 'r': 0}
+                                }
+                            },
+                            config={'displayModeBar': False}
+                        ),
                         id="loading-asia-chart",
-                        type="circle"
+                        type="circle",
+                        parent_className='loading-wrapper',
+                        fullscreen=False,
+                        style={'minHeight': '500px'}
                     )
                 ], style={'backgroundColor': '#fff', 'padding': '10px', 'position': 'relative'}),
 
@@ -530,12 +551,12 @@ def create_layout():
                     }),
 
                     dcc.Loading(
-                        [
-                            html.Div(id='loading-trigger-table', style={'display': 'none'}),
-                            html.Div(id='asia-gas-monthly-table-container')
-                        ],
+                        html.Div(id='asia-gas-monthly-table-container'),
                         id="loading-asia-table",
-                        type="circle"
+                        type="circle",
+                        parent_className='loading-wrapper',
+                        fullscreen=False,
+                        style={'minHeight': '300px'}
                     )
                 ], style={'marginTop': '20px', 'backgroundColor': '#fff', 'padding': '10px'}),
                 
@@ -948,7 +969,7 @@ def build_yearly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'maxHeight': '600px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1147,7 +1168,7 @@ def build_quarterly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'maxHeight': '600px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1358,7 +1379,7 @@ def build_monthly_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'maxHeight': '600px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1587,7 +1608,7 @@ def build_daily_table(df, sector_filter, unit):
             fixed_columns={'headers': True, 'data': 2},
             style_table={
                 'minWidth': '100%', 
-                'height': '600px', 
+                'maxHeight': '600px', 
                 'overflowY': 'auto', 
                 'overflowX': 'auto', 
                 'border': '1px solid #ddd'
@@ -1907,7 +1928,6 @@ def register_callbacks(dash_app, server):
 
     @dash_app.callback(
         [Output('asia-gas-monthly-chart', 'figure'),
-         Output('loading-trigger-chart', 'children'),
          Output('chart-highlight-state', 'data')], # Update highlight state
         [Input('store-asia-chart-data', 'data'),
          Input('asia-sector-start-date', 'value'),
@@ -1919,7 +1939,8 @@ def register_callbacks(dash_app, server):
          Input('asia-table-highlight-state', 'data'), # Listen to table click
          Input('axis-click-trigger', 'value')], # Listen to axis click
          [State('min-date', 'data'),
-         State('max-date', 'data')]
+         State('max-date', 'data')],
+        prevent_initial_call=True
     )
     def update_chart(data, start_date_str, end_date_str, unit, sector_filter, time_level, click_data, table_highlight, axis_click, min_date_store, max_date_store):
         try:
@@ -1949,7 +1970,7 @@ def register_callbacks(dash_app, server):
                  highlight_state = table_highlight
 
             if not data:
-                return go.Figure(), "", highlight_state
+                return go.Figure(), highlight_state
 
             df = pd.DataFrame(data)
             # Reconstruct Date
@@ -1964,7 +1985,7 @@ def register_callbacks(dash_app, server):
                      start_date = pd.to_datetime(min_date_store).tz_localize(None)
                      end_date = pd.to_datetime(max_date_store).tz_localize(None)
                  else:
-                     return go.Figure(), "", highlight_state
+                     return go.Figure(), highlight_state
             else:
                 start_date = pd.to_datetime(start_date_str).tz_localize(None)
                 end_date = pd.to_datetime(end_date_str).tz_localize(None)
@@ -1982,18 +2003,17 @@ def register_callbacks(dash_app, server):
             
             fig = build_chart(df_filtered, sector_filter, unit, time_level, highlight_state)
             
-            return fig, "", highlight_state
+            return fig, highlight_state
             
         except Exception as e:
             print(f"Error in update_chart: {e}")
             fig = go.Figure()
             fig.update_layout(title=f"Error: {str(e)}")
-            return fig, no_update, None
+            return fig, None
 
 
     @dash_app.callback(
-        [Output('asia-gas-monthly-table-container', 'children'),
-         Output('loading-trigger-table', 'children')],
+        Output('asia-gas-monthly-table-container', 'children'),
         [Input('store-asia-table-data', 'data'),
          Input('asia-sector-start-date', 'value'),
          Input('asia-sector-end-date', 'value'),
@@ -2001,12 +2021,13 @@ def register_callbacks(dash_app, server):
          Input('asia-sector-filter', 'value'),
          Input('table-time-level', 'data')],
          [State('min-date', 'data'),
-         State('max-date', 'data')]
+         State('max-date', 'data')],
+        prevent_initial_call=True
     )
     def update_table(data, start_date_str, end_date_str, unit, sector_filter, time_level, min_date_store, max_date_store):
         try:
             if not data:
-                return html.Div("No data available."), ""
+                return html.Div("No data available.")
 
             df = pd.DataFrame(data)
             # Reconstruct Date
@@ -2021,7 +2042,7 @@ def register_callbacks(dash_app, server):
                      start_date = pd.to_datetime(min_date_store).tz_localize(None)
                      end_date = pd.to_datetime(max_date_store).tz_localize(None)
                  else:
-                     return html.Div("No data available."), ""
+                     return html.Div("No data available.")
             else:
                 start_date = pd.to_datetime(start_date_str).tz_localize(None)
                 end_date = pd.to_datetime(end_date_str).tz_localize(None)
@@ -2039,11 +2060,11 @@ def register_callbacks(dash_app, server):
             
             table = build_table(df_filtered, sector_filter, unit, time_level)
             
-            return table, ""
+            return table
             
         except Exception as e:
             print(f"Error in update_table: {e}")
-            return html.Div(f"Error: {str(e)}"), ""
+            return html.Div(f"Error: {str(e)}")
 
 
 
@@ -2075,21 +2096,10 @@ def register_callbacks(dash_app, server):
                         z-index: 2 !important;
                     }
                     
-                    /* Fixed columns should always stay on top with white background */
-                    td[data-dash-column="Country"], 
-                    td[data-dash-column="Sector"] { 
-                        background-color: white !important;
-                    }
-                    
+                    /* Fixed column headers should have white background */
                     th[data-dash-column="Country"], 
                     th[data-dash-column="Sector"] { 
                         background-color: white !important;
-                    }
-                    
-                    /* Override for odd rows */
-                    tr:nth-child(odd) td[data-dash-column="Country"], 
-                    tr:nth-child(odd) td[data-dash-column="Sector"] { 
-                        background-color: #fafbfc !important;
                     }
                     
                     .asia-col-selection-active td[data-dash-column="Country"], 
@@ -2101,17 +2111,6 @@ def register_callbacks(dash_app, server):
                         opacity: 1 !important;
                         background-color: #cfe8ef !important;
                         color: black !important;
-                    }
-                    
-                    /* Keep Country and Sector white even when row is highlighted */
-                    .asia-row-selection-active tr.asia-row-highlighted td[data-dash-column="Country"],
-                    .asia-row-selection-active tr.asia-row-highlighted td[data-dash-column="Sector"] {
-                        background-color: white !important;
-                    }
-                    
-                    .asia-row-selection-active tr:nth-child(odd).asia-row-highlighted td[data-dash-column="Country"],
-                    .asia-row-selection-active tr:nth-child(odd).asia-row-highlighted td[data-dash-column="Sector"] {
-                        background-color: #fafbfc !important;
                     }
 
                     .asia-row-selection-active tr:not(.asia-row-trip-wire) td {
