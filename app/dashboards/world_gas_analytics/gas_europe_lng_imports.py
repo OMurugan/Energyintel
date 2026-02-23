@@ -217,6 +217,23 @@ def create_layout():
         
         # Store for table highlight state
         dcc.Store(id='lng-table-highlight-state'),
+
+        # Cell hover tooltip
+        html.Div(id='lng-table-cell-tooltip', style={
+            'display': 'none',
+            'position': 'fixed',
+            'zIndex': 9999,
+            'backgroundColor': 'white',
+            'border': '1px solid #ccc',
+            'borderRadius': '4px',
+            'padding': '10px 14px',
+            'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+            'fontSize': '12px',
+            'fontFamily': 'Arial, sans-serif',
+            'lineHeight': '1.8',
+            'pointerEvents': 'none',
+            'minWidth': '180px',
+        }),
         
         # Store for dropdown visibility states
         dcc.Store(id='lng-country-dropdown-open', data=False),
@@ -1769,6 +1786,115 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('lng-table-highlight-state', 'data'),
+        Input('lng-imports-table-container', 'children'),
+        prevent_initial_call=False
+    )
+
+    # Clientside callback – cell hover tooltip for LNG imports table
+    dash_app.clientside_callback(
+        """
+        function(tableChildren) {
+            try {
+                var tooltip = document.getElementById('lng-table-cell-tooltip');
+                if (!tooltip) return '';
+
+                function attachTooltip() {
+                    var container = document.getElementById('lng-imports-table-container');
+                    if (!container) return;
+
+                    // Re-attach on every render (guard via a version counter instead of flag)
+                    var currentVersion = container.getAttribute('data-tooltip-version') || '0';
+                    var newVersion = String(Date.now());
+                    if (currentVersion === newVersion) return;
+                    container.setAttribute('data-tooltip-version', newVersion);
+
+                    function buildTooltipHTML(colId, timeLabel) {
+                        if (colId === 'Time_Label') return null;
+
+                        // colId pattern: "{TargetCountry}_{Terminal}"
+                        var sep = colId.indexOf('_');
+                        if (sep === -1) return null;
+                        var country  = colId.substring(0, sep);
+                        var terminal = colId.substring(sep + 1);
+                        if (!terminal) return null;
+
+                        var rows = [];
+                        rows.push(['Point:',          '<strong>' + terminal  + '</strong>']);
+                        rows.push(['Target Country:', '<strong>' + country   + '</strong>']);
+                        if (timeLabel) rows.push(['Month of Date:', '<strong>' + timeLabel + '</strong>']);
+
+                        var tbl = '<table style="border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;">';
+                        rows.forEach(function(r) {
+                            tbl += '<tr><td style="color:#555;padding-right:14px;white-space:nowrap;">' + r[0] +
+                                   '</td><td style="color:#111;">' + r[1] + '</td></tr>';
+                        });
+                        tbl += '</table>';
+                        return tbl;
+                    }
+
+                    function getTimeLabel(td) {
+                        var row = td.closest('tr');
+                        if (!row) return '';
+                        // Dash DataTable renders fixed cols in a separate table body;
+                        // search all tbodies at the same row index for Time_Label cell
+                        var tbody = row.closest('tbody');
+                        if (!tbody) return '';
+                        var rowIdx = Array.from(tbody.querySelectorAll('tr')).indexOf(row);
+
+                        var allBodies = container.querySelectorAll('tbody');
+                        for (var b = 0; b < allBodies.length; b++) {
+                            var bRows = allBodies[b].querySelectorAll('tr');
+                            if (rowIdx >= 0 && rowIdx < bRows.length) {
+                                var tc = bRows[rowIdx].querySelector('td[data-dash-column="Time_Label"]');
+                                if (tc) return tc.innerText.trim();
+                            }
+                        }
+                        return '';
+                    }
+
+                    function onMouseOver(e) {
+                        var td = e.target.closest('td[data-dash-column]');
+                        if (!td) { tooltip.style.display = 'none'; return; }
+                        var colId = td.getAttribute('data-dash-column');
+                        var timeLabel = getTimeLabel(td);
+                        var html = buildTooltipHTML(colId, timeLabel);
+                        if (!html) { tooltip.style.display = 'none'; return; }
+                        tooltip.innerHTML = html;
+                        tooltip.style.display = 'block';
+                    }
+
+                    function onMouseMove(e) {
+                        var td = e.target.closest('td[data-dash-column]');
+                        if (!td) { tooltip.style.display = 'none'; return; }
+                        var x = e.clientX + 14;
+                        var y = e.clientY + 14;
+                        var tw = tooltip.offsetWidth  || 200;
+                        var th = tooltip.offsetHeight || 100;
+                        if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
+                        if (y + th > window.innerHeight) y = e.clientY - th - 14;
+                        tooltip.style.left = x + 'px';
+                        tooltip.style.top  = y + 'px';
+                    }
+
+                    function onMouseLeave() { tooltip.style.display = 'none'; }
+
+                    // Remove old listeners by re-cloning only the inner wrapper
+                    // (safe here since highlight uses container.id, not this specific inner node)
+                    container.addEventListener('mouseover',  onMouseOver);
+                    container.addEventListener('mousemove',  onMouseMove);
+                    container.addEventListener('mouseleave', onMouseLeave);
+                }
+
+                // DataTable renders asynchronously inside the container
+                setTimeout(attachTooltip, 300);
+                return '';
+            } catch(e) {
+                console.error('LNG tooltip error:', e);
+                return '';
+            }
+        }
+        """,
+        Output('lng-table-cell-tooltip', 'children'),
         Input('lng-imports-table-container', 'children'),
         prevent_initial_call=False
     )
