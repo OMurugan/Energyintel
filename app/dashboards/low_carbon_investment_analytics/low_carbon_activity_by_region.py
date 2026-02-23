@@ -844,15 +844,16 @@ def register_callbacks(dash_app, server):
                 start_date = '2015-01-01'
                 end_date = '2025-12-31'
         
-        # Get latest date from database
+        # Get latest date from database within the selected range
         latest_date_query = """
         SELECT MAX(a.date_announced) AS latest_date
         FROM fact_et_assets a
         WHERE a.new_status <> 'Uncertain'
+          AND a.date_announced <= :end_date
         """
         
         try:
-            latest_date_result = execute_query(latest_date_query, {})
+            latest_date_result = execute_query(latest_date_query, {'end_date': end_date})
             latest_date = latest_date_result[0]['latest_date'] if latest_date_result else None
             if latest_date:
                 latest_date_str = latest_date.strftime('%-m/%-d/%Y')
