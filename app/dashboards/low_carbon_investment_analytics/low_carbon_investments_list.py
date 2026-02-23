@@ -8,6 +8,13 @@ import pandas as pd
 from core.data_helpers import execute_query
 
 
+QUERY_LATEST_DATE = """
+SELECT MAX(a.date_announced) AS latest_date
+FROM fact_et_assets a
+WHERE a.new_status <> 'Uncertain';
+"""
+
+
 def load_investments_data(filters=None):
     """Load investments data from database with optional filters"""
     
@@ -541,7 +548,7 @@ def create_layout():
                     
                     # Source attribution
                     html.Div([
-                        html.P("Source: Energy Intelligence, Low Carbon Investment Tracker. Data as of Q4 2025.", 
+                        html.P(id="lc-inv-footer-date",
                                style={
                                    'fontSize': '11px',
                                    'color': '#999',
@@ -1210,6 +1217,7 @@ def register_callbacks(dash_app, server):
     @callback(
         Output('lc-inv-table', 'data'),
         Output('lc-inv-table', 'columns'),
+        Output('lc-inv-footer-date', 'children'),
         [
             Input('lc-inv-asset-search', 'value'),
             Input('lc-inv-peer-group', 'value'),
@@ -1255,8 +1263,19 @@ def register_callbacks(dash_app, server):
         # Load data
         df = load_investments_data(filters)
         
+        # Fetch latest date for footer
+        latest_date_str = "Source: Energy Intelligence, Low Carbon Investment Tracker. Data as of Q4 2025." # Fallback
+        try:
+            latest_result = execute_query(QUERY_LATEST_DATE)
+            if latest_result and latest_result[0]['latest_date']:
+                ld = pd.to_datetime(latest_result[0]['latest_date'])
+                quarter = (ld.month - 1) // 3 + 1
+                latest_date_str = f"Source: Energy Intelligence, Low Carbon Investment Tracker. Data as of Q{quarter} {ld.year}."
+        except Exception as e:
+            print(f"Error fetching latest date for footer: {e}")
+
         if df.empty:
-            return [], []
+            return [], [], latest_date_str
         
         # Create columns
         columns = [{'name': col, 'id': col} for col in df.columns]
@@ -1264,7 +1283,7 @@ def register_callbacks(dash_app, server):
         # Convert to records
         data = df.to_dict('records')
         
-        return data, columns
+        return data, columns, latest_date_str
     
     # Clientside callback to handle dropdown toggling and click-outside logic
     dash_app.clientside_callback(

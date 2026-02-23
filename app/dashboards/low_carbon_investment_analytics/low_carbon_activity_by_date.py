@@ -124,6 +124,12 @@ ORDER BY
     "Status";
 """
 
+QUERY_LATEST_DATE = """
+SELECT MAX(a.date_announced) AS latest_date
+FROM fact_et_assets a
+WHERE a.new_status <> 'Uncertain';
+"""
+
 # -----------------------------------------------------------------------------
 # CONSTANTS & STYLES
 # -----------------------------------------------------------------------------
@@ -265,7 +271,7 @@ def create_layout():
                 ], style={'backgroundColor': '#fff', 'padding': '10px'}),
                 
                 html.Div([
-                    html.P("Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of Q4 2025.", 
+                    html.P(id="lcad-footer-date",
                            style={'fontSize': '10px', 'color': '#666', 'margin': '0'}),
                     html.P([
                         "Covers activity by leading oil and gas firms, tracked by date initially announced or approved. Reported or estimated value is net for companies tracked. For more information see methodology. ",
@@ -411,6 +417,7 @@ def register_callbacks(app, server):
         Output('lcad-investment-type-checklist', 'options'),
         Output('lcad-investment-type-checklist', 'value'),
         Output('lcad-inv-type-prev-store', 'data'),
+        Output('lcad-footer-date', 'children'),
         Input('lcad-interval-dropdown', 'value'),
         Input('lcad-chart-time-level', 'data'),
         Input('lcad-breakdown-dropdown', 'value')
@@ -423,7 +430,7 @@ def register_callbacks(app, server):
             interval = 'YEARLY'
 
         if not interval or not breakdown:
-            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
         engine = get_db_engine()
         
@@ -447,7 +454,7 @@ def register_callbacks(app, server):
                     
         except Exception as e:
             print(f"Error executing query: {e}")
-            return [], [], [], [], [], [], []
+            return [], [], [], [], [], [], [], no_update
 
         # Prepare filter options (unique values)
         status_vals = sorted(df['Status'].dropna().unique())
@@ -458,7 +465,18 @@ def register_callbacks(app, server):
         inv_type_options = [{'label': '(All)', 'value': '(All)'}] + [{'label': s, 'value': s} for s in inv_type_vals]
         inv_type_defaults = ['(All)'] + inv_type_vals
         
-        return df.to_dict('records'), status_options, status_defaults, status_defaults, inv_type_options, inv_type_defaults, inv_type_defaults
+        # Fetch latest date for footer
+        latest_date_str = "Data as of Q4 2025" # Fallback
+        try:
+            latest_df = pd.read_sql(QUERY_LATEST_DATE, engine)
+            if not latest_df.empty and latest_df.iloc[0]['latest_date']:
+                ld = pd.to_datetime(latest_df.iloc[0]['latest_date'])
+                quarter = (ld.month - 1) // 3 + 1
+                latest_date_str = f"Source: Energy Intelligence, Low-Carbon Investment Tracker. Data as of Q{quarter} {ld.year}."
+        except Exception as e:
+            print(f"Error fetching latest date: {e}")
+
+        return df.to_dict('records'), status_options, status_defaults, status_defaults, inv_type_options, inv_type_defaults, inv_type_defaults, latest_date_str
 
     # Helper for "Select All" logic
     def handle_select_all(current_values, previous_values, options):
@@ -1048,10 +1066,11 @@ def register_callbacks(app, server):
          State('lcad-status-checklist', 'value'),
          State('lcad-investment-type-checklist', 'value'),
          State('lcad-interval-dropdown', 'value'),
-         State('lcad-breakdown-dropdown', 'value')],
+         State('lcad-breakdown-dropdown', 'value'),
+         State('lcad-chart-time-level', 'data')],
         prevent_initial_call=True
     )
-    def export_chart_data(n_clicks, data, measure, status_filter, inv_type_filter, interval, breakdown):
+    def export_chart_data(n_clicks, data, measure, status_filter, inv_type_filter, interval, breakdown, chart_time_level):
         if not n_clicks or not data:
             return no_update
 
@@ -1060,6 +1079,10 @@ def register_callbacks(app, server):
             
             if df.empty:
                 return no_update
+
+            # Ensure numeric
+            if measure in df.columns:
+                df[measure] = pd.to_numeric(df[measure], errors='coerce').fillna(0.0)
 
             # Apply filters
             if status_filter:
@@ -1073,14 +1096,42 @@ def register_callbacks(app, server):
             if df.empty:
                 return no_update
             
-            # Remove internal tracking columns for cleaner CSV
-            cols_to_drop = ['Year of Date', 'Quarter of Date', 'Month of Date', 'Day of Date']
-            df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+            # Replicate Period logic from update_chart
+            data_interval = 'YEARLY'
+            if 'Quarter of Date' in df.columns and df['Quarter of Date'].notna().any():
+                data_interval = 'QUARTERLY'
+            
+            time_level = chart_time_level or interval or 'YEARLY'
+            if data_interval == 'YEARLY':
+                time_level = 'YEARLY'
+                df['Period'] = df['Year of Date'].astype(str)
+            elif data_interval == 'QUARTERLY':
+                month_names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                if time_level == 'DAILY':
+                    df['Period'] = df.apply(lambda row: f"{month_names[int(row['Month of Date'])]} 1, {int(row['Year of Date'])}" if pd.notna(row.get('Month of Date')) else str(int(row['Year of Date'])), axis=1)
+                elif time_level == 'MONTHLY':
+                    df['Period'] = df.apply(lambda row: f"{int(row['Year of Date'])} {month_names[int(row['Month of Date'])]}" if pd.notna(row.get('Month of Date')) else str(int(row['Year of Date'])), axis=1)
+                else: 
+                    df['Period'] = df['Year of Date'].astype(str) + ' ' + df['Quarter of Date'].fillna('')
+
+            # Aggregate
+            agg_df = df.groupby(['Period', 'Breakdown'])[measure].sum().reset_index()
+
+            # User-friendly column names
+            measure_label = measure.replace('_', ' ').title()
+            suffix = " ($ Billion)" if measure == 'investment_value' else ""
+            period_label = "Year" if time_level == 'YEARLY' else "Date Announced"
+            
+            agg_df = agg_df.rename(columns={
+                'Period': period_label,
+                'Breakdown': breakdown,
+                measure: f"{measure_label}{suffix}"
+            })
             
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"low_carbon_investments_chart_{timestamp}.csv"
+            filename = f"low_carbon_investments_date_{measure}_{breakdown}_{timestamp}.csv"
             
-            return dcc.send_data_frame(df.to_csv, filename, index=False)
+            return dcc.send_data_frame(agg_df.to_csv, filename, index=False)
 
         except Exception as e:
             print(f"Error exporting chart data: {e}")
