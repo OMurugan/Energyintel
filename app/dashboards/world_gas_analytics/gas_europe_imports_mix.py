@@ -264,6 +264,29 @@ def create_layout():
     origins_df = load_data(origin_query)
     origins = origins_df['source_country'].tolist() if not origins_df.empty else []
 
+    date_query = """
+    SELECT MAX(date) as max_date
+    FROM european_gas_trade
+    """
+    date_df = load_data(date_query)
+    
+    if not date_df.empty and pd.notna(date_df.iloc[0]['max_date']):
+        max_date_val = date_df.iloc[0]['max_date']
+        if isinstance(max_date_val, str):
+            try:
+                max_dt = datetime.strptime(max_date_val[:10], '%Y-%m-%d')
+                end_date_str = max_dt.strftime('%Y-%m-%d')
+                start_date_str = max_dt.replace(year=max_dt.year - 4, month=1, day=1).strftime('%Y-%m-%d')
+            except ValueError:
+                end_date_str = datetime.now().strftime('%Y-%m-%d')
+                start_date_str = (datetime.now().replace(year=datetime.now().year - 4, month=1, day=1)).strftime('%Y-%m-%d')
+        else:
+            end_date_str = max_date_val.strftime('%Y-%m-%d')
+            start_date_str = max_date_val.replace(year=max_date_val.year - 4, month=1, day=1).strftime('%Y-%m-%d')
+    else:
+        end_date_str = datetime.now().strftime('%Y-%m-%d')
+        start_date_str = (datetime.now().replace(year=datetime.now().year - 4, month=1, day=1)).strftime('%Y-%m-%d')
+
     return html.Div([
         # Main Container
         html.Div([
@@ -462,7 +485,7 @@ def create_layout():
                         dcc.Input(
                             id='start-date-picker',
                             type='text',
-                            value=(datetime.now().replace(year=datetime.now().year - 4, month=1, day=1)).strftime('%Y-%m-%d'),
+                            value=start_date_str,
                             placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
@@ -473,7 +496,7 @@ def create_layout():
                         dcc.Input(
                             id='end-date-picker',
                             type='text',
-                            value=datetime.now().strftime('%Y-%m-%d'),
+                            value=end_date_str,
                             placeholder='YYYY-MM-DD',
                             style={'width': '100%', 'padding': '4px', 'fontSize': '12px', 'border': '1px solid #ccc', 'borderRadius': '4px'}
                         ),
