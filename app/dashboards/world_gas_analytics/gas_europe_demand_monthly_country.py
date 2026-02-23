@@ -467,6 +467,23 @@ def create_layout():
         html.Div(id='gas-demand-hover-trigger', style={'display': 'none'}),
         html.Div(id='demand-date-picker-enhancer-anchor', style={'display': 'none'}),
         
+        # Cell hover tooltip
+        html.Div(id='demand-cell-tooltip', style={
+            'display': 'none',
+            'position': 'fixed',
+            'zIndex': 9999,
+            'backgroundColor': 'white',
+            'border': '1px solid #ccc',
+            'borderRadius': '4px',
+            'padding': '10px 14px',
+            'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+            'fontSize': '12px',
+            'fontFamily': 'Arial, sans-serif',
+            'lineHeight': '1.8',
+            'pointerEvents': 'none',
+            'minWidth': '180px',
+        }),
+        
         html.Div([
             # Side Filter Panel (on the right)
             html.Div([
@@ -2064,26 +2081,35 @@ def register_callbacks(dash_app, server):
             if current_vals_at_depth:
                 curr_val = current_vals_at_depth[0]
                 count = 0
-                for v in current_vals_at_depth:
+                for i, v in enumerate(current_vals_at_depth):
                     if v == curr_val:
                         count += 1
                     else:
-                        grouped.append((curr_val, count))
+                        # Construct unique ID using full path of parent levels
+                        sample_col_idx = i - count
+                        path_parts = cols_tuples[sample_col_idx][:depth+1]
+                        col_id = "Time | " + " | ".join(str(p) for p in path_parts)
+                        grouped.append((curr_val, count, col_id))
                         curr_val = v
                         count = 1
-                grouped.append((curr_val, count))  # Add the last group
+                
+                # Add the last group
+                sample_col_idx = len(current_vals_at_depth) - count
+                path_parts = cols_tuples[sample_col_idx][:depth+1]
+                col_id = "Time | " + " | ".join(str(p) for p in path_parts)
+                grouped.append((curr_val, count, col_id))
             
             # Create THs
-            for label, span in grouped:
+            for label, span, col_id in grouped:
                 header_rows_content[depth].append(
-                    html.Th(label, colSpan=span, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9'})
+                    html.Th(label, colSpan=span, **{'data-col-id': col_id}, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '5px', 'backgroundColor': '#f9f9f9', 'cursor': 'pointer'})
                 )
         
         # First header row (Country and top-level time headers, plus Total column)
         first_header_row_ths = [
-            html.Th("Country", rowSpan=num_header_rows, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px', 'width': '120px', 'minWidth': '120px'})
+            html.Th("Country", rowSpan=num_header_rows, **{'data-col-id': 'Country'}, style={'position': 'sticky', 'left': 0, 'zIndex': 20, 'backgroundColor': 'white', 'border': '1px solid #ddd', 'padding': '8px', 'width': '120px', 'minWidth': '120px'})
         ] + header_rows_content[0] + [
-            html.Th("Total", rowSpan=num_header_rows, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#f9f9f9', 'fontWeight': 'bold'})
+            html.Th("Total", rowSpan=num_header_rows, **{'data-col-id': 'Total'}, style={'textAlign': 'center', 'border': '1px solid #ddd', 'padding': '8px', 'backgroundColor': '#f9f9f9', 'fontWeight': 'bold'})
         ]
         thead_rows.append(html.Tr(first_header_row_ths))
         
@@ -2098,11 +2124,12 @@ def register_callbacks(dash_app, server):
         pivot_df = pivot_df.sort_index()
         
         # Iterate through each country
-        for country in pivot_df.index:
+        for row_idx, country in enumerate(pivot_df.index):
             row_cells = []
             
             # Country Cell
             row_cells.append(html.Td(country, 
+                                    **{'data-col-id': 'Country', 'data-row-index': str(row_idx)},
                                     style={'position': 'sticky', 'left': 0, 'zIndex': 10, 'backgroundColor': 'white', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'padding': '8px', 'width': '120px', 'minWidth': '120px'}))
             
             # Data Cells
@@ -2122,23 +2149,55 @@ def register_callbacks(dash_app, server):
                     else:
                         row_total += val
                     
+                    # Construct matching column ID
+                    path_parts = list(col_tuple)
+                    col_id = "Time | " + " | ".join(str(p) for p in path_parts)
+                    
+                    # Build tooltip data attributes from the col_tuple hierarchy
+                    tip_year  = str(col_tuple[0]) if len(col_tuple) >= 1 else ''
+                    tip_qtr   = str(col_tuple[1]) if len(col_tuple) >= 2 and 'Q' in str(col_tuple[1]) else ''
+                    tip_month = ''
+                    if len(levels) >= 2 and levels[1] == 'Month of Date' and len(col_tuple) >= 2:
+                        tip_month = str(col_tuple[1])
+                    elif len(levels) >= 3 and levels[2] == 'Month of Date' and len(col_tuple) >= 3:
+                        tip_month = str(col_tuple[2])
+                    elif len(levels) >= 2 and levels[-1] == 'Month of Date':
+                        tip_month = str(col_tuple[-1])
+                    
+                    cell_attrs = {
+                        'data-col-id': col_id,
+                        'data-row-index': str(row_idx),
+                        'data-country': country,
+                        'data-year': tip_year,
+                        'data-month': tip_month,
+                        'data-qtr': tip_qtr,
+                        'data-value': f"{val:,.0f}" if val != 0 else "-",
+                        'data-unit': selected_unit or '',
+                    }
+                    
                     row_cells.append(html.Td(f"{val:,.0f}" if val != 0 else "-", 
+                                            **cell_attrs,
                                             style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
                     
             except KeyError:
                 # Handle missing data
                 for i in range(len(cols_tuples)):
-                    row_cells.append(html.Td("-", style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
+                    col_tuple = cols_tuples[i]
+                    path_parts = list(col_tuple)
+                    col_id = "Time | " + " | ".join(str(p) for p in path_parts)
+                    row_cells.append(html.Td("-", **{'data-col-id': col_id, 'data-row-index': str(row_idx)}, style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
             
             # Add Total column at the end
             row_cells.append(html.Td(f"{row_total:,.0f}" if row_total != 0 else "-", 
+                                    **{'data-col-id': 'Total', 'data-row-index': str(row_idx)},
                                     style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px', 'fontWeight': 'bold', 'backgroundColor': '#f9f9f9'}))
             
-            tbody_rows.append(html.Tr(row_cells))
+            tbody_rows.append(html.Tr(row_cells, **{'data-row-index': str(row_idx)}))
 
         return html.Div(
             html.Table(
                 [html.Thead(thead_rows), html.Tbody(tbody_rows)],
+                id='europe-demand-table',
                 style={'borderCollapse': 'collapse', 'width': '100%', 'fontFamily': 'Arial', 'fontSize': '12px'}
             ),
             style={'overflowX': 'auto', 'maxWidth': '100%', 'width': '100%'}
@@ -2492,4 +2551,256 @@ def register_callbacks(dash_app, server):
         Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
         Input('chart-camera-btn-demand', 'n_clicks'),
         prevent_initial_call=True
+    )
+
+    # Clientside Callback for Table Highlighting (Robust Version for HTML Table)
+    dash_app.clientside_callback(
+        """
+        function(table_children) {
+            try {
+                const tableId = 'europe-demand-table';
+                const baseStyleId = 'europe-demand-table-base-css';
+                const dynamicStyleId = 'europe-demand-table-dynamic-highlight-css';
+                
+                // 1. Inject Base CSS if not present
+                if (!document.getElementById(baseStyleId)) {
+                    const style = document.createElement('style');
+                    style.id = baseStyleId;
+                    style.innerHTML = `
+                        #${tableId} {
+                            cursor: pointer;
+                        }
+                        #${tableId} td, #${tableId} th {
+                            transition: all 0.2s ease;
+                        }
+                        /* Base selection state: dim normal data cells */
+                        #${tableId}.selection-active td {
+                            color: #ccc !important;
+                            background-color: transparent !important;
+                        }
+                        /* Keep Country column clear and undimmed */
+                        #${tableId}.selection-active td[data-col-id="Country"] {
+                            color: #666 !important;
+                            opacity: 1 !important;
+                        }
+                        /* Highlight for selected column header */
+                        #${tableId} th.column-header-selected {
+                            background-color: #0075A8 !important;
+                            color: white !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                // 2. Set up click listener on the table
+                const setupTable = () => {
+                    const tableEl = document.getElementById(tableId);
+                    if (!tableEl) {
+                        setTimeout(setupTable, 100);
+                        return;
+                    }
+                    
+                    if (tableEl.dataset.highlightEnhanced === 'true') return;
+                    
+                    tableEl.dataset.highlightEnhanced = 'true';
+                    
+                    tableEl.addEventListener('click', function(e) {
+                        const header = e.target.closest('th[data-col-id]');
+                        const cell = e.target.closest('td[data-col-id]');
+                        
+                        if (!header && !cell) return;
+                        
+                        const colId = (header || cell).getAttribute('data-col-id');
+                        const rowIndex = cell ? cell.getAttribute('data-row-index') : null;
+                        
+                        // Ignore clicks on Country header (no rowIndex)
+                        if (colId === 'Country' && !rowIndex) return;
+                        
+                        const isHeader = !!header;
+                        
+                        // Toggle logic
+                        const selectionKey = isHeader ? ('header_' + colId) : ('cell_' + colId + '_' + rowIndex);
+                        
+                        if (tableEl.dataset.lastSelection === selectionKey) {
+                            // Toggle Off
+                            tableEl.dataset.lastSelection = '';
+                            tableEl.classList.remove('selection-active');
+                            tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                            const dynStyle = document.getElementById(dynamicStyleId);
+                            if (dynStyle) dynStyle.remove();
+                            return;
+                        }
+                        tableEl.dataset.lastSelection = selectionKey;
+                        
+                        // Clear existing header highlights
+                        tableEl.querySelectorAll('.column-header-selected').forEach(el => el.classList.remove('column-header-selected'));
+                        
+                        // Apply highlighting class to table
+                        tableEl.classList.add('selection-active');
+                        
+                        let targetColumnIds = [colId];
+                        let highlightRow = rowIndex;
+                        
+                        // Header Click Logic
+                        if (isHeader) {
+                            header.classList.add('column-header-selected');
+                            
+                            // Find all columns that start with this ID (prefix match for hierarchical columns)
+                            const allCells = Array.from(tableEl.querySelectorAll('td[data-col-id]'));
+                            const allIds = Array.from(new Set(allCells.map(td => td.getAttribute('data-col-id'))));
+                            
+                            const childIds = allIds.filter(id => id.startsWith(colId));
+                            if (childIds.length > 0) {
+                                targetColumnIds = childIds;
+                            }
+                        }
+                        
+                        // Generate Dynamic CSS
+                        let dynamicStyles = '';
+                        
+                        // 1. Column(s) Highlighting
+                        if (targetColumnIds.length > 0) {
+                            targetColumnIds.forEach(id => {
+                                dynamicStyles += `
+                                    #${tableId} td[data-col-id="${id}"] {
+                                        background-color: #e1f0ff !important;
+                                        color: #1b365d !important;
+                                        font-weight: 600 !important;
+                                    }
+                                `;
+                            });
+                        }
+                        
+                        // 2. Row Highlighting
+                        if (highlightRow !== null) {
+                            dynamicStyles += `
+                                #${tableId} tr[data-row-index="${highlightRow}"] td {
+                                    background-color: #e1f0ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: 600 !important;
+                                }
+                            `;
+                            // 3. Active Cell with intense border and background
+                            dynamicStyles += `
+                                #${tableId} td[data-col-id="${colId}"][data-row-index="${highlightRow}"] {
+                                    border: 2px solid #fe5000 !important;
+                                    z-index: 10 !important;
+                                    position: relative;
+                                }
+                                /* Special highlight for the Country cell in the selected row */
+                                #${tableId} tr[data-row-index="${highlightRow}"] td[data-col-id="Country"] {
+                                    background-color: #b3d9ff !important;
+                                    color: #1b365d !important;
+                                    font-weight: bold !important;
+                                }
+                            `;
+                        }
+                        
+                        let dynStyle = document.getElementById(dynamicStyleId);
+                        if (!dynStyle) {
+                            dynStyle = document.createElement('style');
+                            dynStyle.id = dynamicStyleId;
+                            document.head.appendChild(dynStyle);
+                        }
+                        dynStyle.innerHTML = dynamicStyles;
+                    });
+                };
+                
+                setupTable();
+                return ""; 
+            } catch(e) { 
+                console.error('Europe Demand Table highlighting error:', e); 
+                return ""; 
+            }
+        }
+        """,
+        Output('gas-demand-hover-trigger', 'children', allow_duplicate=True),
+        Input('europe-table-demand', 'children'),
+        prevent_initial_call='initial_duplicate'
+    )
+
+    # Clientside callback – cell hover tooltip
+    dash_app.clientside_callback(
+        """
+        function(tableChildren) {
+            try {
+                var tooltip = document.getElementById('demand-cell-tooltip');
+                if (!tooltip) return '';
+
+                function buildTooltipHTML(td) {
+                    var country = td.getAttribute('data-country') || '';
+                    var year    = td.getAttribute('data-year')    || '';
+                    var month   = td.getAttribute('data-month')   || '';
+                    var qtr     = td.getAttribute('data-qtr')     || '';
+                    var value   = td.getAttribute('data-value')   || '';
+                    var unit    = td.getAttribute('data-unit')    || '';
+
+                    if (!country || !value) return null;
+
+                    var rows = [];
+                    if (month)   rows.push(['Month of Date:', '<strong>' + month   + '</strong>']);
+                    else if (qtr) rows.push(['Quarter of Date:', '<strong>' + qtr  + '</strong>']);
+                    rows.push(['Country:',      '<strong>' + country + '</strong>']);
+                    rows.push(['Year of Date:', '<strong>' + year    + '</strong>']);
+                    rows.push(['Value:',        '<strong>' + value   + '</strong>']);
+                    if (unit) rows.push(['Unit:', '<strong>' + unit + '</strong>']);
+
+                    var table = '<table style="border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;">';
+                    rows.forEach(function(r) {
+                        table += '<tr>' +
+                            '<td style="color:#555;padding-right:14px;white-space:nowrap;">' + r[0] + '</td>' +
+                            '<td style="color:#111;">' + r[1] + '</td>' +
+                            '</tr>';
+                    });
+                    table += '</table>';
+                    return table;
+                }
+
+                var tableEl = document.getElementById('europe-demand-table');
+                if (!tableEl) return '';
+
+                // Only attach once per render (avoid duplicates without cloning)
+                if (tableEl.getAttribute('data-tooltip-attached') === 'true') return '';
+                tableEl.setAttribute('data-tooltip-attached', 'true');
+
+                function onMouseOver(e) {
+                    var td = e.target.closest('td[data-country]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var html = buildTooltipHTML(td);
+                    if (!html) { tooltip.style.display = 'none'; return; }
+                    tooltip.innerHTML = html;
+                    tooltip.style.display = 'block';
+                }
+
+                function onMouseMove(e) {
+                    var td = e.target.closest('td[data-country]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var x = e.clientX + 14;
+                    var y = e.clientY + 14;
+                    var tw = tooltip.offsetWidth  || 200;
+                    var th = tooltip.offsetHeight || 100;
+                    if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
+                    if (y + th > window.innerHeight) y = e.clientY - th - 14;
+                    tooltip.style.left = x + 'px';
+                    tooltip.style.top  = y + 'px';
+                }
+
+                function onMouseLeave() {
+                    tooltip.style.display = 'none';
+                }
+
+                tableEl.addEventListener('mouseover',  onMouseOver);
+                tableEl.addEventListener('mousemove',  onMouseMove);
+                tableEl.addEventListener('mouseleave', onMouseLeave);
+
+                return '';
+            } catch(e) {
+                console.error('Demand tooltip error:', e);
+                return '';
+            }
+        }
+        """,
+        Output('demand-cell-tooltip', 'children'),
+        Input('europe-table-demand', 'children'),
+        prevent_initial_call='initial_duplicate'
     )

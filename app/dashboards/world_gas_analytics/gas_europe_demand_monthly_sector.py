@@ -404,6 +404,24 @@ def create_layout():
 
         html.Div(id='europe-table-dummy-output', style={'display': 'none'}),
         dcc.Input(id='sector-demand-header-click-input', style={'display': 'none'}),
+
+        # Cell hover tooltip
+        html.Div(id='sector-demand-cell-tooltip', style={
+            'display': 'none',
+            'position': 'fixed',
+            'zIndex': 9999,
+            'backgroundColor': 'white',
+            'border': '1px solid #ccc',
+            'borderRadius': '4px',
+            'padding': '10px 14px',
+            'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+            'fontSize': '12px',
+            'fontFamily': 'Arial, sans-serif',
+            'lineHeight': '1.8',
+            'pointerEvents': 'none',
+            'minWidth': '180px',
+        }),
+
         
         # Anchor for clientside callback
         html.Div(id='europe-sector-date-picker-enhancer-anchor', style={'display': 'none'}),
@@ -2024,4 +2042,116 @@ def register_callbacks(dash_app, server):
                   return new_values, {'values': new_values}
                   
         return selected_values, {'values': selected_values}
+
+    # Clientside callback – cell hover tooltip for DataTable
+    dash_app.clientside_callback(
+        """
+        function(tableData, tableColumns, unit) {
+            try {
+                window._sectorTooltipData = tableData    || [];
+                window._sectorTooltipCols = tableColumns || [];
+                window._sectorTooltipUnit = unit         || '';
+
+                var tooltip = document.getElementById('sector-demand-cell-tooltip');
+                if (!tooltip) return '';
+
+                var tableWrapper = document.getElementById('sector-demand-table');
+                if (!tableWrapper) return '';
+
+                // Only attach listeners once per page load
+                if (tableWrapper.getAttribute('data-tooltip-attached') === 'true') return '';
+                tableWrapper.setAttribute('data-tooltip-attached', 'true');
+
+                function buildTooltipHTML(colId, rowIndex) {
+                    var rows = window._sectorTooltipData || [];
+                    var unit = window._sectorTooltipUnit || '';
+                    if (rowIndex < 0 || rowIndex >= rows.length) return null;
+                    var row = rows[rowIndex];
+                    if (!row) return null;
+                    if (colId === 'Country' || colId === 'Sector') return null;
+
+                    var rawVal = row[colId];
+                    if (rawVal === undefined || rawVal === '' || rawVal === null) return null;
+
+                    var parts  = colId.split('_');
+                    var year   = parts[0] || '';
+                    var period = parts.slice(1).join('_') || '';
+
+                    var country = row['_Country'] || row['Country'] || '';
+                    var sector  = row['Sector']   || '';
+
+                    var dispRows = [];
+                    if (period && period !== 'Total') {
+                        if (/^Q\\d$/.test(period)) {
+                            dispRows.push(['Quarter of Date:', '<strong>' + period + '</strong>']);
+                        } else {
+                            dispRows.push(['Month of Date:', '<strong>' + period + '</strong>']);
+                        }
+                    }
+                    if (country) dispRows.push(['Country:',      '<strong>' + country + '</strong>']);
+                    if (sector)  dispRows.push(['Sector:',       '<strong>' + sector  + '</strong>']);
+                    if (year)    dispRows.push(['Year of Date:', '<strong>' + year    + '</strong>']);
+                    dispRows.push(['Value:', '<strong>' + Number(rawVal).toLocaleString() + '</strong>']);
+                    if (unit) dispRows.push(['Unit:', '<strong>' + unit + '</strong>']);
+
+                    var tbl = '<table style="border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;">';
+                    dispRows.forEach(function(r) {
+                        tbl += '<tr><td style="color:#555;padding-right:14px;white-space:nowrap;">' + r[0] +
+                               '</td><td style="color:#111;">' + r[1] + '</td></tr>';
+                    });
+                    tbl += '</table>';
+                    return tbl;
+                }
+
+                function getRowIndex(td) {
+                    var row = td.closest('tr');
+                    if (!row) return -1;
+                    var tbody = row.closest('tbody');
+                    if (!tbody) return -1;
+                    return Array.from(tbody.querySelectorAll('tr')).indexOf(row);
+                }
+
+                function onMouseOver(e) {
+                    var td = e.target.closest('td[data-dash-column]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var colId = td.getAttribute('data-dash-column');
+                    var rowIndex = getRowIndex(td);
+                    var html = buildTooltipHTML(colId, rowIndex);
+                    if (!html) { tooltip.style.display = 'none'; return; }
+                    tooltip.innerHTML = html;
+                    tooltip.style.display = 'block';
+                }
+
+                function onMouseMove(e) {
+                    var td = e.target.closest('td[data-dash-column]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var x = e.clientX + 14;
+                    var y = e.clientY + 14;
+                    var tw = tooltip.offsetWidth  || 200;
+                    var th = tooltip.offsetHeight || 100;
+                    if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
+                    if (y + th > window.innerHeight) y = e.clientY - th - 14;
+                    tooltip.style.left = x + 'px';
+                    tooltip.style.top  = y + 'px';
+                }
+
+                function onMouseLeave() { tooltip.style.display = 'none'; }
+
+                tableWrapper.addEventListener('mouseover',  onMouseOver);
+                tableWrapper.addEventListener('mousemove',  onMouseMove);
+                tableWrapper.addEventListener('mouseleave', onMouseLeave);
+
+                return '';
+            } catch(e) {
+                console.error('Sector tooltip error:', e);
+                return '';
+            }
+        }
+        """,
+        Output('sector-demand-cell-tooltip', 'children'),
+        Input('sector-demand-table', 'data'),
+        [State('sector-demand-table', 'columns'),
+         State('unit-selector', 'value')],
+        prevent_initial_call=False
+    )
 

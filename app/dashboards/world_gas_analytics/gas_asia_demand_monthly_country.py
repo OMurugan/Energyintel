@@ -474,6 +474,23 @@ def create_layout():
         html.Div(id='gas-asia-demand-hover-trigger', style={'display': 'none'}),
         html.Div(id='asia-demand-date-picker-enhancer-anchor', style={'display': 'none'}),
         
+        # Cell hover tooltip
+        html.Div(id='asia-demand-cell-tooltip', style={
+            'display': 'none',
+            'position': 'fixed',
+            'zIndex': 9999,
+            'backgroundColor': 'white',
+            'border': '1px solid #ccc',
+            'borderRadius': '4px',
+            'padding': '10px 14px',
+            'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+            'fontSize': '12px',
+            'fontFamily': 'Arial, sans-serif',
+            'lineHeight': '1.8',
+            'pointerEvents': 'none',
+            'minWidth': '180px',
+        }),
+        
         html.Div([
             # Side Filter Panel (on the right)
             html.Div([
@@ -2199,8 +2216,30 @@ def register_callbacks(dash_app, server):
                     path_parts = list(col_tuple)
                     col_id = "Time | " + " | ".join(str(p) for p in path_parts)
                     
+                    # Build tooltip data attributes from the col_tuple hierarchy
+                    tip_year  = str(col_tuple[0]) if len(col_tuple) >= 1 else ''
+                    tip_qtr   = str(col_tuple[1]) if len(col_tuple) >= 2 and 'Q' in str(col_tuple[1]) else ''
+                    tip_month = ''
+                    if len(levels) >= 2 and levels[1] == 'Month of Date' and len(col_tuple) >= 2:
+                        tip_month = str(col_tuple[1])
+                    elif len(levels) >= 3 and levels[2] == 'Month of Date' and len(col_tuple) >= 3:
+                        tip_month = str(col_tuple[2])
+                    elif len(levels) >= 2 and levels[-1] == 'Month of Date':
+                        tip_month = str(col_tuple[-1])
+                    
+                    cell_attrs = {
+                        'data-col-id': col_id,
+                        'data-row-index': str(row_idx),
+                        'data-country': country,
+                        'data-year': tip_year,
+                        'data-month': tip_month,
+                        'data-qtr': tip_qtr,
+                        'data-value': f"{val:,.0f}" if val != 0 else "-",
+                        'data-unit': selected_unit or '',
+                    }
+                    
                     row_cells.append(html.Td(f"{val:,.0f}" if val != 0 else "-", 
-                                            **{'data-col-id': col_id, 'data-row-index': str(row_idx)},
+                                            **cell_attrs,
                                             style={'textAlign': 'right', 'border': '1px solid #ddd', 'padding': '5px'}))
                     
             except KeyError:
@@ -2667,6 +2706,92 @@ def register_callbacks(dash_app, server):
         }
         """,
         Output('gas-asia-demand-hover-trigger', 'children'),
+        Input('asia-table-demand', 'children'),
+        prevent_initial_call=False
+    )
+
+    # Clientside callback – cell hover tooltip
+    dash_app.clientside_callback(
+        """
+        function(tableChildren) {
+            try {
+                var tooltip = document.getElementById('asia-demand-cell-tooltip');
+                if (!tooltip) return '';
+
+                function buildTooltipHTML(td) {
+                    var country = td.getAttribute('data-country') || '';
+                    var year    = td.getAttribute('data-year')    || '';
+                    var month   = td.getAttribute('data-month')   || '';
+                    var qtr     = td.getAttribute('data-qtr')     || '';
+                    var value   = td.getAttribute('data-value')   || '';
+                    var unit    = td.getAttribute('data-unit')    || '';
+
+                    if (!country || !value) return null;
+
+                    var rows = [];
+                    if (month)    rows.push(['Month of Date:', '<strong>' + month   + '</strong>']);
+                    else if (qtr) rows.push(['Quarter of Date:', '<strong>' + qtr   + '</strong>']);
+                    rows.push(['Country:',      '<strong>' + country + '</strong>']);
+                    rows.push(['Year of Date:', '<strong>' + year    + '</strong>']);
+                    rows.push(['Value:',        '<strong>' + value   + '</strong>']);
+                    if (unit) rows.push(['Unit:', '<strong>' + unit + '</strong>']);
+
+                    var table = '<table style="border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;">';
+                    rows.forEach(function(r) {
+                        table += '<tr>' +
+                            '<td style="color:#555;padding-right:14px;white-space:nowrap;">' + r[0] + '</td>' +
+                            '<td style="color:#111;">' + r[1] + '</td>' +
+                            '</tr>';
+                    });
+                    table += '</table>';
+                    return table;
+                }
+
+                var tableEl = document.getElementById('asia-demand-table');
+                if (!tableEl) return '';
+
+                // Only attach once per render (avoid duplicates without cloning)
+                if (tableEl.getAttribute('data-tooltip-attached') === 'true') return '';
+                tableEl.setAttribute('data-tooltip-attached', 'true');
+
+                function onMouseOver(e) {
+                    var td = e.target.closest('td[data-country]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var html = buildTooltipHTML(td);
+                    if (!html) { tooltip.style.display = 'none'; return; }
+                    tooltip.innerHTML = html;
+                    tooltip.style.display = 'block';
+                }
+
+                function onMouseMove(e) {
+                    var td = e.target.closest('td[data-country]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var x = e.clientX + 14;
+                    var y = e.clientY + 14;
+                    var tw = tooltip.offsetWidth  || 200;
+                    var th = tooltip.offsetHeight || 100;
+                    if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
+                    if (y + th > window.innerHeight) y = e.clientY - th - 14;
+                    tooltip.style.left = x + 'px';
+                    tooltip.style.top  = y + 'px';
+                }
+
+                function onMouseLeave() {
+                    tooltip.style.display = 'none';
+                }
+
+                tableEl.addEventListener('mouseover',  onMouseOver);
+                tableEl.addEventListener('mousemove',  onMouseMove);
+                tableEl.addEventListener('mouseleave', onMouseLeave);
+
+                return '';
+            } catch(e) {
+                console.error('Asia demand tooltip error:', e);
+                return '';
+            }
+        }
+        """,
+        Output('asia-demand-cell-tooltip', 'children'),
         Input('asia-table-demand', 'children'),
         prevent_initial_call=False
     )

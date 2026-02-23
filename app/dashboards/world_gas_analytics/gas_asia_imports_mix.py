@@ -723,7 +723,24 @@ def create_layout():
             
             # Hidden div for clientside callback anchor
             html.Div(id='gas-asia-table-enhancer-anchor', style={'display': 'none'}),
-            html.Div(id='gas-asia-date-picker-enhancer-anchor', style={'display': 'none'})
+            html.Div(id='gas-asia-date-picker-enhancer-anchor', style={'display': 'none'}),
+
+            # Cell hover tooltip
+            html.Div(id='gas-asia-imports-mix-tooltip', style={
+                'display': 'none',
+                'position': 'fixed',
+                'zIndex': 9999,
+                'backgroundColor': 'white',
+                'border': '1px solid #ccc',
+                'borderRadius': '4px',
+                'padding': '10px 14px',
+                'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+                'fontSize': '12px',
+                'fontFamily': 'Arial, sans-serif',
+                'lineHeight': '1.8',
+                'pointerEvents': 'none',
+                'minWidth': '180px',
+            }),
         ], style={'padding': '20px', 'backgroundColor': 'white', 'width': '100%'})
         
     ], style={'backgroundColor': '#ffffff', 'fontFamily': 'Lato, sans-serif'})
@@ -2597,3 +2614,118 @@ def register_callbacks(dash_app, server):
         
         df = load_data(t_query, {**params, 'origins': tuple(origins_filtered), 'flow_types': tuple(flow_filtered)})
         return dcc.send_data_frame(df.to_csv, "asian_gas_imports_table.csv", index=False)
+
+
+    # Clientside callback – cell hover tooltip for Asia Imports Mix table
+    dash_app.clientside_callback(
+        """
+        function(tableData, tableColumns) {
+            try {
+                // Store latest data & columns in window so mouseover handler always has fresh data
+                window._asiaImixData    = tableData    || [];
+                window._asiaImixColumns = tableColumns || [];
+
+                var tooltip = document.getElementById('gas-asia-imports-mix-tooltip');
+                if (!tooltip) return '';
+
+                var tableWrapper = document.getElementById('gas-asia-imports-mix-table');
+                if (!tableWrapper) return '';
+
+                // Only attach listeners once per page load
+                if (tableWrapper.getAttribute('data-tooltip-attached') === 'true') return '';
+                tableWrapper.setAttribute('data-tooltip-attached', 'true');
+
+                function buildTooltipHTML(colId, rowIndex) {
+                    var rows = window._asiaImixData || [];
+                    if (rowIndex < 0 || rowIndex >= rows.length) return null;
+                    var row = rows[rowIndex];
+                    if (!row) return null;
+
+                    // Skip non-data columns
+                    var skipCols = ['Year of Date', 'Month of Date', 'Quarter of Date', 'Day of Date'];
+                    if (skipCols.indexOf(colId) !== -1) return null;
+
+                    // colId pattern: "{Destination}_{FlowType}"  e.g. "India_LNG"
+                    var lastUnderscore = colId.lastIndexOf('_');
+                    if (lastUnderscore === -1) return null;
+                    var destination = colId.substring(0, lastUnderscore);
+                    var flowType    = colId.substring(lastUnderscore + 1).trim();
+                    // Strip any zero-width spaces that were added to workaround Dash header merging
+                    flowType = flowType.replace(/\u200B/g, '');
+
+                    var rawVal = row[colId];
+                    if (rawVal === undefined || rawVal === '' || rawVal === null) return null;
+
+                    // Determine display period from row
+                    var monthVal   = row['Month of Date']   || '';
+                    var yearVal    = row['Year of Date']    || '';
+                    var quarterVal = row['Quarter of Date'] || '';
+
+                    var dispRows = [];
+                    if (monthVal)   dispRows.push(['Month of Date:', '<strong>' + monthVal   + '</strong>']);
+                    else if (quarterVal) dispRows.push(['Quarter of Date:', '<strong>' + quarterVal + '</strong>']);
+                    if (flowType)    dispRows.push(['Flow Type:',    '<strong>' + flowType    + '</strong>']);
+                    if (destination) dispRows.push(['Destination:',  '<strong>' + destination + '</strong>']);
+                    if (yearVal)     dispRows.push(['Year of Date:', '<strong>' + yearVal     + '</strong>']);
+                    dispRows.push(['Unit:', '<strong>Mcm</strong>']);
+                    dispRows.push(['total_value:', '<strong>' + Number(rawVal).toLocaleString() + '</strong>']);
+
+                    var tbl = '<table style="border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;">';
+                    dispRows.forEach(function(r) {
+                        tbl += '<tr><td style="color:#555;padding-right:14px;white-space:nowrap;">' + r[0] +
+                               '</td><td style="color:#111;">' + r[1] + '</td></tr>';
+                    });
+                    tbl += '</table>';
+                    return tbl;
+                }
+
+                function getRowIndex(td) {
+                    var row = td.closest('tr');
+                    if (!row) return -1;
+                    var tbody = row.closest('tbody');
+                    if (!tbody) return -1;
+                    return Array.from(tbody.querySelectorAll('tr')).indexOf(row);
+                }
+
+                function onMouseOver(e) {
+                    var td = e.target.closest('td[data-dash-column]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var colId = td.getAttribute('data-dash-column');
+                    var rowIndex = getRowIndex(td);
+                    var html = buildTooltipHTML(colId, rowIndex);
+                    if (!html) { tooltip.style.display = 'none'; return; }
+                    tooltip.innerHTML = html;
+                    tooltip.style.display = 'block';
+                }
+
+                function onMouseMove(e) {
+                    var td = e.target.closest('td[data-dash-column]');
+                    if (!td) { tooltip.style.display = 'none'; return; }
+                    var x = e.clientX + 14;
+                    var y = e.clientY + 14;
+                    var tw = tooltip.offsetWidth  || 200;
+                    var th = tooltip.offsetHeight || 100;
+                    if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
+                    if (y + th > window.innerHeight) y = e.clientY - th - 14;
+                    tooltip.style.left = x + 'px';
+                    tooltip.style.top  = y + 'px';
+                }
+
+                function onMouseLeave() { tooltip.style.display = 'none'; }
+
+                tableWrapper.addEventListener('mouseover',  onMouseOver);
+                tableWrapper.addEventListener('mousemove',  onMouseMove);
+                tableWrapper.addEventListener('mouseleave', onMouseLeave);
+
+                return '';
+            } catch(e) {
+                console.error('Asia imports mix tooltip error:', e);
+                return '';
+            }
+        }
+        """,
+        Output('gas-asia-imports-mix-tooltip', 'children'),
+        Input('gas-asia-imports-mix-table', 'data'),
+        [State('gas-asia-imports-mix-table', 'columns')],
+        prevent_initial_call=False
+    )
