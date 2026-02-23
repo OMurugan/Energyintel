@@ -2759,36 +2759,39 @@ def register_callbacks(dash_app, server):
                 var tableEl = document.getElementById('europe-demand-table');
                 if (!tableEl) return '';
 
-                // Remove any previous listeners by cloning
-                var newTable = tableEl.cloneNode(true);
-                tableEl.parentNode.replaceChild(newTable, tableEl);
+                // Only attach once per render (avoid duplicates without cloning)
+                if (tableEl.getAttribute('data-tooltip-attached') === 'true') return '';
+                tableEl.setAttribute('data-tooltip-attached', 'true');
 
-                newTable.addEventListener('mouseover', function(e) {
+                function onMouseOver(e) {
                     var td = e.target.closest('td[data-country]');
                     if (!td) { tooltip.style.display = 'none'; return; }
                     var html = buildTooltipHTML(td);
                     if (!html) { tooltip.style.display = 'none'; return; }
                     tooltip.innerHTML = html;
                     tooltip.style.display = 'block';
-                });
+                }
 
-                newTable.addEventListener('mousemove', function(e) {
+                function onMouseMove(e) {
                     var td = e.target.closest('td[data-country]');
                     if (!td) { tooltip.style.display = 'none'; return; }
                     var x = e.clientX + 14;
                     var y = e.clientY + 14;
-                    // Keep tooltip inside viewport
                     var tw = tooltip.offsetWidth  || 200;
                     var th = tooltip.offsetHeight || 100;
                     if (x + tw > window.innerWidth)  x = e.clientX - tw - 14;
                     if (y + th > window.innerHeight) y = e.clientY - th - 14;
                     tooltip.style.left = x + 'px';
                     tooltip.style.top  = y + 'px';
-                });
+                }
 
-                newTable.addEventListener('mouseleave', function() {
+                function onMouseLeave() {
                     tooltip.style.display = 'none';
-                });
+                }
+
+                tableEl.addEventListener('mouseover',  onMouseOver);
+                tableEl.addEventListener('mousemove',  onMouseMove);
+                tableEl.addEventListener('mouseleave', onMouseLeave);
 
                 return '';
             } catch(e) {
