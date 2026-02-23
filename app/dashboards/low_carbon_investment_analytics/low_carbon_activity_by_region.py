@@ -856,7 +856,9 @@ def register_callbacks(dash_app, server):
             latest_date_result = execute_query(latest_date_query, {'end_date': end_date})
             latest_date = latest_date_result[0]['latest_date'] if latest_date_result else None
             if latest_date:
-                latest_date_str = latest_date.strftime('%-m/%-d/%Y')
+                # Format as Quarter and Year (e.g., Q4 2025)
+                quarter = (latest_date.month - 1) // 3 + 1
+                latest_date_str = f"Q{quarter} {latest_date.year}"
             else:
                 latest_date_str = "N/A"
         except Exception as e:
